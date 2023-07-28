@@ -85,7 +85,7 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
     /// @notice Explain to an end user what this does
     /// @dev Explain to a developer any extra details
     /// @param
-    function deposit() external payable {
+    function deposit() external payable whenNotPaused {
         require(msg.value > 0, "You need to send some ether");
 
         // receive tokens
@@ -110,7 +110,7 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
         address _token,
         uint256 _amount,
         address _destination
-    ) external payable {
+    ) external payable whenNotPaused {
         require(_token != address(0), "Invalid token address");
         require(_amount > 0, "Amount must be greater than zero");
         require(_destination != address(0), "Invalid destination address");
