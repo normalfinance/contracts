@@ -176,6 +176,26 @@ const config: HardhatUserConfig = {
       accounts: walletUtils.makeKeyList(),
       chainId: 10,
     },
+    hederaMainnet: {
+      url: `https://mainnet.hashio.io/api`,
+      accounts: walletUtils.makeKeyList(),
+      chainId: 295,
+    },
+    hederaTestnet: {
+      url: `https://testnet.hashio.io/api`,
+      accounts: walletUtils.makeKeyList(),
+      chainId: 296,
+    },
+    filecoinMainnet: {
+      url: ``,
+      accounts: walletUtils.makeKeyList(),
+      chainId: 314,
+    },
+    filecoinTestnet: {
+      url: ``,
+      accounts: walletUtils.makeKeyList(),
+      chainId: 0,
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
@@ -196,6 +216,10 @@ const config: HardhatUserConfig = {
       arbitrumOne: process.env.ARBITRUM_API_KEY || "",
       optimisticGoerli: process.env.OPTIMISTIC_API_KEY || "",
       optimisticEthereum: process.env.OPTIMISTIC_API_KEY || "",
+      hederaTestnet: process.env.HEDERA_API_KEY || "",
+      hedera: process.env.HEDERA_API_KEY || "",
+      filecoinTestnet: process.env.FILECOIN_API_KEY || "",
+      filecoin: process.env.FILECOIN_API_KEY || "",
     },
   },
 };

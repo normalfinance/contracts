@@ -58,6 +58,7 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
         address _normChainlinkContract,
         address _ethChainlinkContract
     ) {
+        require(_annualFee > 0 && _annualFee <= 10000, "Invalid annual fee");
         _disableInitializers();
 
         normalToken = _normalToken;
@@ -130,11 +131,11 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
 
         // Collect fee
         uint daysDiff = (now - lastFeeWithdrawDate) / 60 / 60 / 24;
-        uint256 proratedFee = annualFee * daysDiff;
-        feeController.transfer(proratedFee);
+        uint256 proratedFee = ((annualFee / 365) * daysDiff) / 10000; // TODO: change to wei?
+        feeController.transfer(_amount * proratedFee);
 
         // Send token to destination
-        _destination.transfer(_amount - proratedFee);
+        _destination.transfer(_amount * (1 - proratedFee)); // TODO: change to wei?
         emit Withdrawal(msg.sender, _token, _amount, proratedFee);
 
         // Burn $NORM tokens
@@ -157,6 +158,10 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
     function adjustFee(
         uint256 _newAnnualFee
     ) external onlyRole(FEE_CONTROLLER_ROLE) {
+        require(
+            _newAnnualFee > 0 && _newAnnualFee <= 10000,
+            "Invalid annual fee"
+        );
         annualFee = _newAnnualFee;
     }
 
