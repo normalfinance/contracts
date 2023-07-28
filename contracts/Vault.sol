@@ -176,7 +176,7 @@ contract Vault is Initializable, PausableUpgradeable, AccessControlUpgradeable {
         uint daysDiff = (now - lastFeeWithdrawDate) / 60 / 60 / 24;
         require(daysDiff <= 28, "Cannot withdraw fee more than once a month");
 
-        totalFee = address(this).balance * (annualFee / 12);
+        totalFee = (address(this).balance * annualFee) / 10000 / 12;
         feeController.transfer(totalFee);
 
         emit FeeCollection(now, totalFee);
