@@ -19,12 +19,12 @@ import "../node_modules/@openzeppelin/contracts-upgradeable/proxy/utils/Initiali
 // | $$ \  $$|  $$$$$$/| $$      | $$ | $$ | $$|  $$$$$$$| $$
 // |__/  \__/ \______/ |__/      |__/ |__/ |__/ \_______/|__/
 
-/// @title A title that should describe the contract/interface
+/// @title
 /// @author Joshua Blew <joshua@normalfinance.io>
-/// @notice Explain to an end user what this does
-/// @dev Explain to a developer any extra details
+/// @notice
+/// @dev
 /// @custom:security-contact hello@normalfinance.io
-contract NormalToken is
+contract IndexToken is
     Initializable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
@@ -37,19 +37,18 @@ contract NormalToken is
     bytes32 public constant SNAPSHOT_ROLE = keccak256("SNAPSHOT_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize() public initializer {
-        __ERC20_init("NormalToken", "NORM");
+    function initialize(
+        string calldata _name,
+        string calldata _symbol
+    ) public initializer {
+        __ERC20_init(_name, _symbol);
         __ERC20Burnable_init();
         __ERC20Snapshot_init();
         __AccessControl_init();
         __Pausable_init();
-        __ERC20Permit_init("NormalToken");
+        __ERC20Permit_init(_name);
         __ERC20Votes_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -70,7 +69,12 @@ contract NormalToken is
         _unpause();
     }
 
-    function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) {
+    function mint(
+        address to,
+        uint256 amount
+    ) public onlyRole(MINTER_ROLE) whenNotPaused {
+        require(to != address(0), "Invalid to address");
+        require(amount > 0, "Invalid amount");
         _mint(to, amount);
     }
 
