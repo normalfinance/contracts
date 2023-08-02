@@ -50,6 +50,7 @@
     "ethers": "^5.6.8",
     "hardhat": "^2.9.7",
     "hardhat-gas-reporter": "^1.0.8",
+    "hardhat-interface-generator": "^0.0.6",
     "husky": "^8.0.3",
     "pinst": "^3.0.0",
     "prettier": "^2.6.2",
