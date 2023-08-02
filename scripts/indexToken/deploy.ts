@@ -1,15 +1,18 @@
 import { ethers, run } from "hardhat";
 
 async function main() {
-  const NormalToken = await ethers.getContractFactory("NormalToken");
-  const token = await NormalToken.deploy();
+  const IndexToken = await ethers.getContractFactory("IndexToken");
+  const token = await IndexToken.deploy();
   await token.deployed();
-  console.log("NormalToken deployed at: ", token.address);
+  console.log("IndexToken deployed at: ", token.address);
 
   await run(`verify:verify`, {
     address: token.address,
     constructorArguments: [],
   });
+
+  await token.initialize("NormalToken", "NORM");
+  console.log("IndexToken initialized");
 }
 
 main().catch((error) => {
