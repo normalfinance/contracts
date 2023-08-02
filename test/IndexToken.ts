@@ -12,7 +12,6 @@ export async function deployIndexToken(
 
 export const AddressZero = "0x0000000000000000000000000000000000000000";
 export const AddressOne = "0x0000000000000000000000000000000000000001";
-export const FunctionSelector = "0x00000000";
 
 describe("Index Token tests", function () {
   let vault: Vault;
@@ -142,5 +141,5 @@ describe("Index Token tests", function () {
     });
   });
 
-  // TODO: write test for  ERC20PermitUpgradeable and ERC20VotesUpgradeable
+  // TODO: write test for  ERC20PermitUpgradeable
 });

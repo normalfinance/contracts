@@ -55,6 +55,13 @@ contract Vault is
     mapping(bytes32 => address) internal whitelistedTokens;
     mapping(bytes32 => uint256) internal tokenFeesToCollect;
 
+    struct WithdrawRequest {
+        address owner;
+        bytes32 symbol;
+        uint256 amount;
+        address payable to;
+    }
+
     event Deposit(address indexed from, bytes32 symbol, uint256 amount);
     event Withdrawal(
         address indexed from,
@@ -167,58 +174,66 @@ contract Vault is
 
     /// @notice Withdrawals tokens from the Vault
     /// @dev
-    /// @param _for Address the withdrawal is for
-    /// @param _symbol Desired withdrawal token
-    /// @param _amount Quantity of tokens to withdraw
-    /// @param _destination Address to send withdrawal to
-    /// @param _indexTokensToBurn Quantity of Index Tokens to burn for withdrawal
+    /// @param withdrawal ...
+    /// @param _toBurn Quantity of Index Tokens to burn for withdrawal
     function withdraw(
-        address _for,
-        bytes32 _symbol,
-        uint256 _amount,
-        address payable _destination,
-        uint256 _indexTokensToBurn,
+        WithdrawRequest calldata _withdrawal,
+        uint256 _toBurn,
         bytes32 _hash,
         bytes calldata _signature
     ) external payable onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(whitelistedTokens[_symbol] != address(0), "Unsupported symbol");
-        require(_amount > 0, "Amount must be greater than zero");
         require(
-            _amount <=
-                IERC20(whitelistedTokens[_symbol]).balanceOf(address(this)) -
-                    tokenFeesToCollect[_symbol],
+            whitelistedTokens[_withdrawal.symbol] != address(0),
+            "Unsupported symbol"
+        );
+        require(_withdrawal.amount > 0, "Amount must be greater than zero");
+        require(
+            _withdrawal.amount <=
+                IERC20(whitelistedTokens[_withdrawal.symbol]).balanceOf(
+                    address(this)
+                ) -
+                    tokenFeesToCollect[_withdrawal.symbol],
             "Insufficient Vault funds"
         );
-        require(_destination != address(0), "Invalid destination address");
+        require(_withdrawal.to != address(0), "Invalid destination address");
         require(
-            0 < _indexTokensToBurn &&
-                _indexTokensToBurn <= IERC20(indexToken).balanceOf(_for),
+            0 < _toBurn &&
+                _toBurn <= IERC20(indexToken).balanceOf(_withdrawal.owner),
             "Invalid index tokens to burn"
         );
         require(
-            SignatureChecker.isValidSignatureNow(_for, _hash, _signature) ==
-                true,
+            SignatureChecker.isValidSignatureNow(
+                _withdrawal.owner,
+                _hash,
+                _signature
+            ) == true,
             "Invalid signature"
         );
 
         // Calculate and track fee
-        uint256 timeDelta = block.timestamp - lastFeeWithdrawalDates[_symbol];
-        uint256 proratedFee = (((annualFee * _amount) * timeDelta) /
+        uint256 timeDelta = block.timestamp -
+            lastFeeWithdrawalDates[_withdrawal.symbol];
+        uint256 proratedFee = (((annualFee * _withdrawal.amount) * timeDelta) /
             ONE_YEAR /
             TEN_THOUSAND);
 
-        tokenFeesToCollect[_symbol] += proratedFee;
+        tokenFeesToCollect[_withdrawal.symbol] += proratedFee;
 
         // Send token to destination
-        IERC20(whitelistedTokens[_symbol]).transfer(
-            _destination,
-            _amount - proratedFee
+        IERC20(whitelistedTokens[_withdrawal.symbol]).transfer(
+            _withdrawal.to,
+            _withdrawal.amount - proratedFee
         );
-        emit Withdrawal(_for, _symbol, _amount, proratedFee);
+        emit Withdrawal(
+            _withdrawal.owner,
+            _withdrawal.symbol,
+            _withdrawal.amount,
+            proratedFee
+        );
 
         // Burn Index Token
-        // ERC20BurnableUpgradeable(indexToken).burnFrom(_for, _indexTokensToBurn);
-        // emit TokenBurn(_for, _indexTokensToBurn);
+        // ERC20BurnableUpgradeable(indexToken).burnFrom(_withdrawal.owner, _toBurn);
+        // emit TokenBurn(_withdrawal.owner, _toBurn);
     }
 
     /*///////////////////////////////////////////////////////////////
