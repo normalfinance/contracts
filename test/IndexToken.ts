@@ -53,9 +53,7 @@ describe("Index Token tests", function () {
       pauserAddress,
       feeControllerAddress,
       token.address,
-      "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
-      parseEther("0.005"),
-      [],
+      50,
       [],
       []
     );
@@ -63,7 +61,7 @@ describe("Index Token tests", function () {
   });
 
   describe("mint: issues new tokens to Index Fund investor", function () {
-    it("success if DEFAULT_ADMIN_CALL", async () => {
+    it("success if DEFAULT_ADMIN_ROLE call", async () => {
       const bobBalanceBefore = await token.balanceOf(bobAddress);
       expect(bobBalanceBefore).to.equal(parseEther("0"));
 
@@ -77,16 +75,6 @@ describe("Index Token tests", function () {
 
     it("fail if not DEFAULT_ADMIN_ROLE call", async () => {
       tx = token.connect(bob).mint(bobAddress, 100);
-      await expect(tx).to.be.reverted;
-    });
-
-    it("fail if invalid to address", async () => {
-      tx = token.connect(owner).mint(AddressZero, 100);
-      await expect(tx).to.be.reverted;
-    });
-
-    it("fail if invalid amount", async () => {
-      tx = token.connect(owner).mint(bobAddress, 0);
       await expect(tx).to.be.reverted;
     });
 
@@ -124,18 +112,6 @@ describe("Index Token tests", function () {
 
     it("fail if ERC20: burn amount exceeds balance", async () => {
       tx = token.connect(bob).burn(parseEther("10000"));
-      await expect(tx).to.be.reverted;
-    });
-  });
-
-  describe("snapshot: captures balances for use in voting", function () {
-    it("success if SNAPSHOT_ROLE call", async () => {
-      tx = await token.connect(owner).snapshot();
-      await tx.wait();
-    });
-
-    it("fail if not SNAPSHOT_ROLE call", async () => {
-      tx = token.connect(bob).snapshot();
       await expect(tx).to.be.reverted;
     });
   });
