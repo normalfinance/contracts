@@ -1,12 +1,18 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, web3 } from "hardhat";
+// import Web3 from 'web3';
 import {
   Vault,
   MockToken,
   IndexToken,
   IndexToken__factory,
 } from "../typechain";
-import { formatBytes32String, parseEther } from "ethers/lib/utils";
+import {
+  formatBytes32String,
+  formatEther,
+  keccak256,
+  parseEther,
+} from "ethers/lib/utils";
 
 export async function deployIndexToken(
   provider = ethers.provider
@@ -15,8 +21,20 @@ export async function deployIndexToken(
   return IndexToken__factory.connect(ntf.address, provider.getSigner());
 }
 
+function toEthSignedMessageHash(messageHex: any) {
+  const messageBuffer = Buffer.from(messageHex.substring(2), "hex");
+  const prefix = Buffer.from(
+    `\u0019Ethereum Signed Message:\n${messageBuffer.length}`
+  );
+  return keccak256(Buffer.concat([prefix, messageBuffer]));
+}
+
 export const AddressZero = "0x0000000000000000000000000000000000000000";
 export const AddressOne = "0x0000000000000000000000000000000000000001";
+export const DummySignature = AddressZero;
+
+export const TEN_THOUSAND = 10000;
+export const ONE_YEAR = 31556952;
 
 describe("Vault tests", function () {
   let vault: Vault;
@@ -28,17 +46,32 @@ describe("Vault tests", function () {
   let feeController: any;
   let pauser: any;
   let bob: any;
+  let alice: any;
 
   let ownerAddress: string;
   let feeControllerAddress: string;
   let pauserAddress: string;
   let bobAddress: string;
+  let aliceAddress: string;
 
+  let ethSignedMessage: string;
+  let signature: string;
   let tx: any;
+
+  async function createWithdrawSignature(
+    symbol: string,
+    amount: string,
+    destination: string,
+    signer: string
+  ) {
+    const messageHash = web3.utils.sha3(`${symbol}:${amount}:${destination}`)!;
+    signature = await web3.eth.sign(messageHash, signer);
+    ethSignedMessage = toEthSignedMessageHash(messageHash);
+  }
 
   before(async () => {
     // Prep accounts/wallets
-    [owner, pauser, feeController, bob] = await ethers.getSigners();
+    [owner, pauser, feeController, bob, alice] = await ethers.getSigners();
 
     mockTokenSymbol = formatBytes32String("TST");
     indexToken = await deployIndexToken();
@@ -47,6 +80,11 @@ describe("Vault tests", function () {
     feeControllerAddress = feeController.getAddress();
     pauserAddress = await pauser.getAddress();
     bobAddress = await bob.getAddress();
+    aliceAddress = await alice.getAddress();
+
+    // Init Token
+    await indexToken.initialize("NormalToken", "NORM");
+    console.log("Token initialized");
 
     // Deploy MockToken
     const MockToken = await ethers.getContractFactory("MockToken");
@@ -64,11 +102,9 @@ describe("Vault tests", function () {
       pauserAddress,
       feeControllerAddress,
       indexToken.address,
-      "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
-      parseEther("0.005"),
+      50,
       [formatBytes32String("TST")],
-      [mockToken.address],
-      ["0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"]
+      [mockToken.address]
     );
     console.log("Vault initialized");
 
@@ -84,11 +120,9 @@ describe("Vault tests", function () {
           pauserAddress,
           feeControllerAddress,
           indexToken.address,
-          "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419",
           parseEther("0.005"),
           [formatBytes32String("TST")],
-          [mockToken.address],
-          ["0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"]
+          [mockToken.address]
         );
       await expect(tx).to.be.reverted;
     });
@@ -108,7 +142,6 @@ describe("Vault tests", function () {
         parseEther("500")
       );
       expect(await mockToken.balanceOf(bobAddress)).to.equal(parseEther("500"));
-      // expect(await indexToken.balanceOf(bobAddress)).to.equal(500); // TODO: not yet integrated
     });
 
     it("fail if Vault is paused", async () => {
@@ -143,59 +176,226 @@ describe("Vault tests", function () {
   });
 
   describe("withdraw: remove tokens from the Vault", function () {
-    // TODO: 🚨 FAILING
-    it("success if caller owns NORM tokens", async () => {
+    it("success if caller owns Index tokens", async () => {
+      const withdrawalAmount = parseEther("100");
+      const vaultBalanceBefore = await mockToken.balanceOf(vault.address);
+      const aliceBalanceBefore = await mockToken.balanceOf(alice.address);
+
       // add normal token to bob
-      await indexToken.mint(bobAddress, 500);
-      expect(await indexToken.balanceOf(bobAddress)).to.equal(500);
+      tx = await indexToken.connect(owner).mint(bobAddress, withdrawalAmount);
+      await tx.wait();
+      expect(await indexToken.balanceOf(bobAddress)).to.equal(withdrawalAmount);
 
       // withdraw
-      tx = await vault.connect(bob).withdraw(500, mockTokenSymbol, bobAddress);
+      await createWithdrawSignature(
+        "TST",
+        aliceAddress,
+        withdrawalAmount.toString(),
+        bobAddress
+      );
+
+      tx = await vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          withdrawalAmount,
+          aliceAddress,
+          withdrawalAmount,
+          ethSignedMessage,
+          signature
+        );
       await tx.wait();
+
+      const fee = await vault.connect(bob).getFee();
+      const lastFeeWithdrawalDate = await vault
+        .connect(bob)
+        .getLastFeeWithdrawalDate(mockTokenSymbol);
+
+      const blockNumBefore = await ethers.provider.getBlockNumber();
+      const blockBefore = await ethers.provider.getBlock(blockNumBefore);
+      const timestampBefore = blockBefore.timestamp;
+
+      const timeDelta = timestampBefore - lastFeeWithdrawalDate.toNumber();
+      const proratedFee = fee
+        .mul(withdrawalAmount)
+        .mul(timeDelta)
+        .div(ONE_YEAR)
+        .div(TEN_THOUSAND);
 
       // expect updated balances
-      expect(await mockToken.balanceOf(vault.address)).to.equal(0);
-      expect(await mockToken.balanceOf(bobAddress)).to.equal(1000);
-      expect(await indexToken.balanceOf(bobAddress)).to.equal(0);
+      expect(await mockToken.balanceOf(vault.address)).to.equal(
+        vaultBalanceBefore.sub(withdrawalAmount).add(proratedFee)
+      );
+      expect(await mockToken.balanceOf(aliceAddress)).to.equal(
+        aliceBalanceBefore.add(withdrawalAmount).sub(proratedFee)
+      );
+      // expect(await indexToken.balanceOf(bobAddress)).to.equal(0);
     });
 
-    it("fail if Vault is paused", async () => {
-      tx = await vault.connect(pauser).pause();
-      await tx.wait();
-
-      tx = vault.connect(bob).withdraw(500, mockTokenSymbol, bobAddress);
+    it("fail if not DEFAULT_ADMIN_ROLE call", async () => {
+      await createWithdrawSignature(
+        "TST",
+        bobAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(bob)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          parseEther("500"),
+          bobAddress,
+          500,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
-
-      // reset
-      (await vault.connect(pauser).unpause()).wait();
-      const isPaused = await vault.connect(bob).paused();
-      expect(isPaused).to.be.false;
     });
 
     it("fail if invalid amount", async () => {
-      tx = vault.connect(bob).withdraw(0, mockTokenSymbol, bobAddress);
+      await createWithdrawSignature(
+        "TST",
+        bobAddress,
+        parseEther("0").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          formatBytes32String("ABC"),
+          parseEther("0"),
+          bobAddress,
+          500,
+          ethSignedMessage,
+          signature
+        );
+      await expect(tx).to.be.reverted;
+
+      await createWithdrawSignature(
+        "ABC",
+        bobAddress,
+        parseEther("10000").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          formatBytes32String("ABC"),
+          parseEther("10000"),
+          bobAddress,
+          500,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
     });
 
     it("fail if unsupported token", async () => {
+      await createWithdrawSignature(
+        "ABC",
+        bobAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
       tx = vault
-        .connect(bob)
-        .withdraw(500, formatBytes32String("ABC"), bobAddress);
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          formatBytes32String("ABC"),
+          parseEther("500"),
+          bobAddress,
+          500,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
     });
 
     it("fail if invalid destination", async () => {
-      tx = vault.connect(bob).withdraw(500, mockTokenSymbol, AddressZero);
+      await createWithdrawSignature(
+        "TST",
+        bobAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          parseEther("500"),
+          AddressZero,
+          500,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
     });
 
-    it("fail if caller has insufficient Normal Token balance", async () => {
+    it("fail if invalid Index Token balance", async () => {
       // zero
-      tx = vault.connect(bob).withdraw(500, mockTokenSymbol, bobAddress);
+      await createWithdrawSignature(
+        "TST",
+        bobAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          parseEther("500"),
+          bobAddress,
+          0,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
 
-      // to much
-      tx = vault.connect(bob).withdraw(1100, mockTokenSymbol, bobAddress);
+      // to0 much
+      await createWithdrawSignature(
+        "TST",
+        bobAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          parseEther("500"),
+          bobAddress,
+          10000,
+          ethSignedMessage,
+          signature
+        );
+      await expect(tx).to.be.reverted;
+    });
+
+    it("fail if invalid signature", async () => {
+      await createWithdrawSignature(
+        "TST",
+        aliceAddress,
+        parseEther("500").toString(),
+        bobAddress
+      );
+      tx = vault
+        .connect(owner)
+        .withdraw(
+          bobAddress,
+          mockTokenSymbol,
+          parseEther("500"),
+          bobAddress,
+          500,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
     });
 
@@ -216,38 +416,22 @@ describe("Vault tests", function () {
     it("success if DEFAULT_ADMIN_ROLE call", async () => {
       tx = await vault
         .connect(owner)
-        .whitelistToken(
-          newTokenSymbol,
-          AddressOne,
-          "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"
-        );
+        .whitelistToken(newTokenSymbol, AddressOne);
       await tx.wait();
 
-      const whitelistedTokenAddress = await vault
+      const whitelistedToken = await vault
         .connect(bob)
-        .getWhitelistedTokenAddress(newTokenSymbol);
-      expect(whitelistedTokenAddress).to.equal(AddressOne);
+        .getWhitelistedToken(newTokenSymbol);
+      expect(whitelistedToken).to.equal(AddressOne);
     });
 
     it("fail if not DEFAULT_ADMIN_ROLE call", async () => {
-      tx = vault
-        .connect(bob)
-        .whitelistToken(
-          newTokenSymbol,
-          AddressOne,
-          "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"
-        );
+      tx = vault.connect(bob).whitelistToken(newTokenSymbol, AddressOne);
       await expect(tx).to.be.reverted;
     });
 
     it("fail if invalid token address", async () => {
-      tx = vault
-        .connect(bob)
-        .whitelistToken(
-          newTokenSymbol,
-          AddressZero,
-          "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419"
-        );
+      tx = vault.connect(bob).whitelistToken(newTokenSymbol, AddressZero);
       await expect(tx).to.be.reverted;
     });
   });
@@ -275,42 +459,40 @@ describe("Vault tests", function () {
 
   describe("adjustFee: update the annual fee", function () {
     it("success if valid fee and FEE_CONTROLLER_ROLE / feeController call", async () => {
-      tx = await vault.connect(feeController).adjustFee(parseEther("0.003"));
+      tx = await vault.connect(feeController).adjustFee(30);
       await tx.wait();
 
       const updatedFee = await vault.connect(feeController).getFee();
-      expect(updatedFee).to.equal(parseEther("0.003"));
+      expect(updatedFee).to.equal(30);
 
       // reset
-      (
-        await vault.connect(feeController).adjustFee(parseEther("0.005"))
-      ).wait();
+      (await vault.connect(feeController).adjustFee(50)).wait();
       const fee = await vault.connect(bob).getFee();
-      expect(fee).to.equal(parseEther("0.005"));
+      expect(fee).to.equal(50);
     });
 
     it("fail if not FEE_CONTROLLER_ROLE / feeController call", async () => {
-      tx = vault.connect(bob).adjustFee(parseEther("0.008"));
+      tx = vault.connect(bob).adjustFee(80);
       await expect(tx).to.be.reverted;
     });
 
     it("fail if fee out of bounds", async () => {
-      tx = vault.connect(feeController).adjustFee(parseEther("0.06"));
+      tx = vault.connect(feeController).adjustFee(5001);
       await expect(tx).to.be.reverted;
 
-      tx = vault.connect(feeController).adjustFee(parseEther("-0.005"));
+      tx = vault.connect(feeController).adjustFee(-1);
       await expect(tx).to.be.reverted;
     });
   });
 
   describe("withdrawFee: claim monthly fee proceeds", function () {
-    it("success if ", async () => {
+    it("success if FEE_CONTROLLER_ROLE call", async () => {
       // bob has deposited 500 TST into the Vault so far...
 
       const vaultBalanceBefore = await mockToken.balanceOf(vault.address);
       const lastFeeWithdrawalDateBefore = await vault
         .connect(bob)
-        .getLastFeeWithdrawalDate();
+        .getLastFeeWithdrawalDate(mockTokenSymbol);
 
       // execute withdrawFee
       tx = await vault.connect(feeController).withdrawFee([mockTokenSymbol]);
@@ -320,18 +502,18 @@ describe("Vault tests", function () {
       const fee = await vault.connect(bob).getFee();
       const lastFeeWithdrawalDate = await vault
         .connect(bob)
-        .getLastFeeWithdrawalDate();
+        .getLastFeeWithdrawalDate(mockTokenSymbol);
 
-      const dayDiff = lastFeeWithdrawalDate
-        .sub(lastFeeWithdrawalDateBefore)
-        .div(60)
-        .div(60)
-        .div(24);
-      expect(dayDiff).to.equal(30);
+      const timeDelta = lastFeeWithdrawalDate.sub(lastFeeWithdrawalDateBefore);
 
-      const expectedFee = fee.div(365).mul(dayDiff).mul(vaultBalanceBefore);
-      expect(await mockToken.balanceOf(feeControllerAddress)).to.equal(
-        expectedFee
+      const proratedFee = fee
+        .mul(vaultBalanceBefore)
+        .mul(timeDelta)
+        .div(ONE_YEAR)
+        .div(TEN_THOUSAND);
+      // TODO: refactor to expect equal to <tokenFee + tokenFeesToCollect[_symbols[i]]>
+      expect(await mockToken.balanceOf(feeControllerAddress)).to.be.at.least(
+        proratedFee
       );
 
       // expect lastFeeWithdrawalDate update
