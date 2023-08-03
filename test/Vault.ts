@@ -194,17 +194,17 @@ describe("Vault tests", function () {
         bobAddress
       );
 
-      tx = await vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          withdrawalAmount,
-          aliceAddress,
-          withdrawalAmount,
-          ethSignedMessage,
-          signature
-        );
+      tx = await vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: withdrawalAmount,
+          to: aliceAddress,
+        },
+        withdrawalAmount,
+        ethSignedMessage,
+        signature
+      );
       await tx.wait();
 
       const fee = await vault.connect(bob).getFee();
@@ -240,17 +240,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(bob)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          parseEther("500"),
-          bobAddress,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(bob).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: parseEther("500"),
+          to: bobAddress,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
@@ -261,17 +261,17 @@ describe("Vault tests", function () {
         parseEther("0").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          formatBytes32String("ABC"),
-          parseEther("0"),
-          bobAddress,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: formatBytes32String("ABC"),
+          amount: parseEther("0"),
+          to: bobAddress,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
 
       await createWithdrawSignature(
@@ -280,17 +280,17 @@ describe("Vault tests", function () {
         parseEther("10000").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          formatBytes32String("ABC"),
-          parseEther("10000"),
-          bobAddress,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: formatBytes32String("ABC"),
+          amount: parseEther("10000"),
+          to: bobAddress,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
@@ -301,17 +301,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          formatBytes32String("ABC"),
-          parseEther("500"),
-          bobAddress,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: formatBytes32String("ABC"),
+          amount: parseEther("500"),
+          to: bobAddress,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
@@ -322,17 +322,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          parseEther("500"),
-          AddressZero,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: parseEther("500"),
+          to: AddressZero,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
@@ -344,17 +344,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          parseEther("500"),
-          bobAddress,
-          0,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: parseEther("500"),
+          to: bobAddress,
+        },
+        0,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
 
       // to0 much
@@ -364,17 +364,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          parseEther("500"),
-          bobAddress,
-          10000,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: parseEther("500"),
+          to: bobAddress,
+        },
+        10000,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
@@ -385,17 +385,17 @@ describe("Vault tests", function () {
         parseEther("500").toString(),
         bobAddress
       );
-      tx = vault
-        .connect(owner)
-        .withdraw(
-          bobAddress,
-          mockTokenSymbol,
-          parseEther("500"),
-          bobAddress,
-          500,
-          ethSignedMessage,
-          signature
-        );
+      tx = vault.connect(owner).withdraw(
+        {
+          owner: bobAddress,
+          symbol: mockTokenSymbol,
+          amount: parseEther("500"),
+          to: bobAddress,
+        },
+        500,
+        ethSignedMessage,
+        signature
+      );
       await expect(tx).to.be.reverted;
     });
 
