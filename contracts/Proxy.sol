@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 // Interfaces
-import "../node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IVault.sol";
 import "./interfaces/IProxy.sol";
 
@@ -10,12 +10,12 @@ import "./interfaces/IProxy.sol";
 import "./lib/SharedStructs.sol";
 
 // Upgradeable Modules
-import "../node_modules/@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "../node_modules/@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "../node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 
 // Modules
-import "../node_modules/@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 //  /$$   /$$                 s                            /$$
 // | $$$ | $$                                            | $$
