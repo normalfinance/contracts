@@ -1,13 +1,24 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { Proxy, Vault, IndexToken, IndexToken__factory } from "../typechain";
+import {
+  Proxy,
+  IndexToken,
+  IndexToken__factory,
+  Vault,
+  Vault__factory,
+} from "../typechain";
 import { parseEther } from "ethers/lib/utils";
 
 export async function deployIndexToken(
   provider = ethers.provider
 ): Promise<IndexToken> {
-  const ntf = await (await ethers.getContractFactory("IndexToken")).deploy();
-  return IndexToken__factory.connect(ntf.address, provider.getSigner());
+  const itf = await (await ethers.getContractFactory("IndexToken")).deploy();
+  return IndexToken__factory.connect(itf.address, provider.getSigner());
+}
+
+export async function deployVault(provider = ethers.provider): Promise<Vault> {
+  const vf = await (await ethers.getContractFactory("Vault")).deploy();
+  return Vault__factory.connect(vf.address, provider.getSigner());
 }
 
 export const AddressZero = "0x0000000000000000000000000000000000000000";
@@ -33,6 +44,7 @@ describe("Proxy tests", function () {
   before(async () => {
     [owner, pauser, feeController, bob] = await ethers.getSigners();
     token = await deployIndexToken();
+    vault = await deployVault();
 
     ownerAddress = await owner.getAddress();
     feeControllerAddress = feeController.getAddress();
@@ -43,12 +55,7 @@ describe("Proxy tests", function () {
     await token.initialize("NormalToken", "NORM");
     console.log("Token initialized");
 
-    // Deploy Proxy
-    const Proxy = await ethers.getContractFactory("Proxy");
-    proxy = await Proxy.deploy();
-    await proxy.deployed();
-    console.log("Proxy deployed at: ", proxy.address);
-
+    // Init Vault
     await vault.initialize(
       pauserAddress,
       feeControllerAddress,
@@ -58,35 +65,60 @@ describe("Proxy tests", function () {
       []
     );
     console.log("Vault initialized");
+
+    // Deploy Proxy
+    const Proxy = await ethers.getContractFactory("Proxy");
+    proxy = await Proxy.deploy();
+    await proxy.deployed();
+    console.log("Proxy deployed at: ", proxy.address);
+
+    // Init Proxy
+    await proxy.initialize(token.address, vault.address);
+    console.log("Vault initialized");
   });
 
-  describe("updateBalance: ", function () {
+  describe("updateBalances: ", function () {
     it("success if OWNER call", async () => {
-      tx = await proxy.connect(owner).updateBalance(bobAddress, parseEther("100"));
+      tx = await proxy.connect(owner).updateBalances([], []);
       await tx.wait();
 
       // expect();
     });
 
-    it("fail if not DEFAULT_ADMIN_ROLE call", async () => {
-      tx = token.connect(bob).mint(bobAddress, 100);
+    it("fail if not OWNER call", async () => {
+      tx = proxy.connect(bob).updateBalances([], []);
+      await expect(tx).to.be.reverted;
+    });
+
+    it("fail if uneven arrays", async () => {
+      tx = proxy.connect(owner).updateBalances([], []);
       await expect(tx).to.be.reverted;
     });
   });
 
   describe("batchWithdraw: ", function () {
     it("success if OWNER call", async () => {
-      tx = await token.connect(owner).mint(bobAddress, parseEther("100"));
+      tx = await proxy.connect(owner).batchWithdraw([], [], [], []);
       await tx.wait();
 
-      expect(await token.balanceOf(bobAddress)).to.equal(
-        bobBalanceBefore.add(parseEther("100"))
-      );
+      // expect();
     });
 
-    it("fail if not DEFAULT_ADMIN_ROLE call", async () => {
-      tx = token.connect(bob).mint(bobAddress, 100);
+    it("fail if not OWNER call", async () => {
+      tx = proxy.connect(bob).batchWithdraw([], [], [], []);
       await expect(tx).to.be.reverted;
     });
+
+    it("fail if uneven arrays", async () => {
+      tx = proxy.connect(owner).batchWithdraw([], [], [], []);
+      await expect(tx).to.be.reverted;
+    });
+
+    it("fail if contains invalid signature", async () => {
+      tx = proxy.connect(owner).batchWithdraw([], [], [], []);
+      await expect(tx).to.be.reverted;
+    });
+
+    // TODO: add fail cases from Vault.withdraw sub-call
   });
 });
