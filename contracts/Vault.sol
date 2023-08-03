@@ -3,6 +3,10 @@ pragma solidity ^0.8.17;
 
 // Interfaces
 import "../node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./interfaces/IVault.sol";
+
+// Lib
+import "./lib/SharedStructs.sol";
 
 // Modules
 import "../node_modules/@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -28,6 +32,7 @@ import "../node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensio
 /// @notice
 /// @dev
 contract Vault is
+    IVault,
     Initializable,
     PausableUpgradeable,
     AccessControlUpgradeable,
@@ -46,68 +51,52 @@ contract Vault is
     bytes32 public constant FEE_CONTROLLER_ROLE =
         keccak256("FEE_CONTROLLER_ROLE");
 
-    address payable private feeController;
+    address payable private _feeController;
 
-    uint256 private annualFee; // bps
-    mapping(bytes32 => uint256) private lastFeeWithdrawalDates;
+    uint256 private _annualFee; // bps
+    mapping(bytes32 => uint256) private _lastFeeWithdrawalDates;
 
-    address internal indexToken;
-    mapping(bytes32 => address) internal whitelistedTokens;
-    mapping(bytes32 => uint256) internal tokenFeesToCollect;
-
-    struct WithdrawRequest {
-        address owner;
-        bytes32 symbol;
-        uint256 amount;
-        address payable to;
-    }
-
-    event Deposit(address indexed from, bytes32 symbol, uint256 amount);
-    event Withdrawal(
-        address indexed from,
-        bytes32 symbol,
-        uint256 amount,
-        uint256 proratedFee
-    );
-    event FeeCollection(uint timestamp, uint256 totalFee);
-    event TokenBurn(address, uint256);
-    event Whitelist(bytes32 symbol);
+    address private _indexToken;
+    mapping(bytes32 => address) private _whitelistedTokens;
+    mapping(bytes32 => uint256) private _tokenFeesToCollect;
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
     //////////////////////////////////////////////////////////////*/
 
+    // solhint-disable-next-line no-empty-blocks
+    receive() external payable virtual {}
+
     function initialize(
-        address _pauser,
-        address payable _feeController,
-        address _indexTokenAddress,
-        uint256 _annualFee,
+        address _aPauser,
+        address payable _aFeeController,
+        address _anIndexTokenAddress,
+        uint256 _anAnnualFee,
         bytes32[] memory _tokenSymbols,
         address[] memory _tokenAddresses
     ) public initializer {
-        require(0 < _annualFee && _annualFee <= 5000, "Invalid annual fee"); // b/t 0% and 5%
-        require(
-            _tokenSymbols.length == _tokenAddresses.length,
-            "Invalid address arrays"
-        );
+        if (_anAnnualFee <= 0 || 5000 < _anAnnualFee)
+            revert InvalidAnnualFee(_anAnnualFee);
+        if (_tokenSymbols.length != _tokenAddresses.length)
+            revert UnevenArrays();
 
         __Pausable_init();
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, _pauser);
-        _grantRole(FEE_CONTROLLER_ROLE, _feeController);
+        _grantRole(PAUSER_ROLE, _aPauser);
+        _grantRole(FEE_CONTROLLER_ROLE, _aFeeController);
 
-        feeController = _feeController;
+        _feeController = _aFeeController;
 
-        annualFee = _annualFee;
+        _annualFee = _anAnnualFee;
 
-        indexToken = _indexTokenAddress;
+        _indexToken = _anIndexTokenAddress;
 
         for (uint256 i = 0; i < _tokenSymbols.length; ++i) {
-            whitelistedTokens[_tokenSymbols[i]] = _tokenAddresses[i];
-            tokenFeesToCollect[_tokenSymbols[i]] = 0;
-            lastFeeWithdrawalDates[_tokenSymbols[i]] = getOneMonthAgo();
+            _whitelistedTokens[_tokenSymbols[i]] = _tokenAddresses[i];
+            _tokenFeesToCollect[_tokenSymbols[i]] = 0;
+            _lastFeeWithdrawalDates[_tokenSymbols[i]] = getOneMonthAgo();
         }
     }
 
@@ -122,7 +111,7 @@ contract Vault is
 
     /// @notice Returns the Vault fee.
     function getFee() public view virtual returns (uint256) {
-        return annualFee;
+        return _annualFee;
     }
 
     /// @notice Returns the timestamp when the last fee was collected.
@@ -130,7 +119,7 @@ contract Vault is
     function getLastFeeWithdrawalDate(
         bytes32 _symbol
     ) public view virtual returns (uint) {
-        return lastFeeWithdrawalDates[_symbol];
+        return _lastFeeWithdrawalDates[_symbol];
     }
 
     /// @notice Returns the outstanding fees to collect for a token.
@@ -138,7 +127,7 @@ contract Vault is
     function getTokenFeesToCollect(
         bytes32 _symbol
     ) public view virtual returns (uint) {
-        return tokenFeesToCollect[_symbol];
+        return _tokenFeesToCollect[_symbol];
     }
 
     /// @notice Returns the token contract address.
@@ -146,7 +135,7 @@ contract Vault is
     function getWhitelistedToken(
         bytes32 _symbol
     ) public view virtual returns (address) {
-        return whitelistedTokens[_symbol];
+        return _whitelistedTokens[_symbol];
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -160,11 +149,12 @@ contract Vault is
     function deposit(
         bytes32 _symbol,
         uint256 _amount
-    ) external payable whenNotPaused nonReentrant {
-        require(whitelistedTokens[_symbol] != address(0), "Unsupported symbol");
-        require(_amount > 0, "Amount must be greater than zero");
+    ) external whenNotPaused nonReentrant {
+        if (_whitelistedTokens[_symbol] == address(0))
+            revert UnsupportedToken(_symbol);
+        if (_amount <= 0) revert InvalidAmount(_amount);
 
-        IERC20(whitelistedTokens[_symbol]).transferFrom(
+        IERC20(_whitelistedTokens[_symbol]).transferFrom(
             msg.sender,
             address(this),
             _amount
@@ -177,52 +167,55 @@ contract Vault is
     /// @param withdrawal ...
     /// @param _toBurn Quantity of Index Tokens to burn for withdrawal
     function withdraw(
-        WithdrawRequest calldata _withdrawal,
+        SharedStructs.WithdrawRequest calldata _withdrawal,
         uint256 _toBurn,
         bytes32 _hash,
         bytes calldata _signature
-    ) external payable onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(
-            whitelistedTokens[_withdrawal.symbol] != address(0),
-            "Unsupported symbol"
-        );
-        require(_withdrawal.amount > 0, "Amount must be greater than zero");
-        require(
-            _withdrawal.amount <=
-                IERC20(whitelistedTokens[_withdrawal.symbol]).balanceOf(
-                    address(this)
-                ) -
-                    tokenFeesToCollect[_withdrawal.symbol],
-            "Insufficient Vault funds"
-        );
-        require(_withdrawal.to != address(0), "Invalid destination address");
-        require(
-            0 < _toBurn &&
-                _toBurn <= IERC20(indexToken).balanceOf(_withdrawal.owner),
-            "Invalid index tokens to burn"
-        );
-        require(
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        uint256 preGas = gasleft();
+
+        if (_whitelistedTokens[_withdrawal.symbol] == address(0))
+            revert UnsupportedToken(_withdrawal.symbol);
+        if (_withdrawal.amount <= 0) revert InvalidAmount(_withdrawal.amount);
+        if (
+            _withdrawal.amount >
+            IERC20(_whitelistedTokens[_withdrawal.symbol]).balanceOf(
+                address(this)
+            ) -
+                _tokenFeesToCollect[_withdrawal.symbol]
+        ) revert InsuffientVaultFunds();
+        if (_withdrawal.to == address(0)) revert InvalidAddress(_withdrawal.to);
+        if (
+            _toBurn <= 0 ||
+            _toBurn > IERC20(_indexToken).balanceOf(_withdrawal.owner)
+        ) revert InsuffientAccountFunds();
+        if (
             SignatureChecker.isValidSignatureNow(
                 _withdrawal.owner,
                 _hash,
                 _signature
-            ) == true,
-            "Invalid signature"
-        );
+            ) == false
+        ) revert InvalidSignature();
 
-        // Calculate and track fee
+        // Calculate prorated fee
         uint256 timeDelta = block.timestamp -
-            lastFeeWithdrawalDates[_withdrawal.symbol];
-        uint256 proratedFee = (((annualFee * _withdrawal.amount) * timeDelta) /
+            _lastFeeWithdrawalDates[_withdrawal.symbol];
+        uint256 proratedFee = (((_annualFee * _withdrawal.amount) * timeDelta) /
             ONE_YEAR /
             TEN_THOUSAND);
 
-        tokenFeesToCollect[_withdrawal.symbol] += proratedFee;
+        // Calculate gas cost of transaction
+        uint256 actualGasCost = (preGas - gasleft()) * tx.gasprice;
+
+        uint256 totalFee = proratedFee + actualGasCost;
+
+        // Record fee for delayed collection
+        _tokenFeesToCollect[_withdrawal.symbol] += totalFee;
 
         // Send token to destination
-        IERC20(whitelistedTokens[_withdrawal.symbol]).transfer(
+        IERC20(_whitelistedTokens[_withdrawal.symbol]).transfer(
             _withdrawal.to,
-            _withdrawal.amount - proratedFee
+            _withdrawal.amount - totalFee
         );
         emit Withdrawal(
             _withdrawal.owner,
@@ -230,10 +223,6 @@ contract Vault is
             _withdrawal.amount,
             proratedFee
         );
-
-        // Burn Index Token
-        // ERC20BurnableUpgradeable(indexToken).burnFrom(_withdrawal.owner, _toBurn);
-        // emit TokenBurn(_withdrawal.owner, _toBurn);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -255,11 +244,11 @@ contract Vault is
         bytes32 _symbol,
         address _tokenAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokenAddress != address(0), "Invalid token address");
+        if (_tokenAddress == address(0)) revert InvalidAddress(_tokenAddress);
 
-        whitelistedTokens[_symbol] = _tokenAddress;
-        tokenFeesToCollect[_symbol] = 0;
-        lastFeeWithdrawalDates[_symbol] = getOneMonthAgo();
+        _whitelistedTokens[_symbol] = _tokenAddress;
+        _tokenFeesToCollect[_symbol] = 0;
+        _lastFeeWithdrawalDates[_symbol] = getOneMonthAgo();
 
         emit Whitelist(_symbol);
     }
@@ -270,11 +259,9 @@ contract Vault is
     function adjustFee(
         uint256 _newAnnualFee
     ) external onlyRole(FEE_CONTROLLER_ROLE) {
-        require(
-            0 < _newAnnualFee && _newAnnualFee <= 5000,
-            "Invalid annual fee"
-        ); // b/t 0% and 5%
-        annualFee = _newAnnualFee;
+        if (_newAnnualFee <= 0 || 5000 < _newAnnualFee)
+            revert InvalidAnnualFee(_newAnnualFee);
+        _annualFee = _newAnnualFee;
     }
 
     /// @notice Withdraws Vault fee
@@ -292,31 +279,31 @@ contract Vault is
         uint _now = block.timestamp;
 
         for (uint256 i = 0; i < _symbols.length; ++i) {
-            if (whitelistedTokens[_symbols[i]] != address(0)) {
-                uint256 vaultBalance = IERC20(whitelistedTokens[_symbols[i]])
+            if (_whitelistedTokens[_symbols[i]] != address(0)) {
+                uint256 vaultBalance = IERC20(_whitelistedTokens[_symbols[i]])
                     .balanceOf(address(this));
 
                 if (vaultBalance > 0) {
                     uint256 timeDelta = block.timestamp -
-                        lastFeeWithdrawalDates[_symbols[i]];
+                        _lastFeeWithdrawalDates[_symbols[i]];
 
-                    uint256 tokenFee = (((annualFee * vaultBalance) *
+                    uint256 tokenFee = (((_annualFee * vaultBalance) *
                         timeDelta) /
                         ONE_YEAR /
                         TEN_THOUSAND);
 
-                    IERC20(whitelistedTokens[_symbols[i]]).transfer(
-                        feeController,
-                        tokenFee + tokenFeesToCollect[_symbols[i]]
+                    IERC20(_whitelistedTokens[_symbols[i]]).transfer(
+                        _feeController,
+                        tokenFee + _tokenFeesToCollect[_symbols[i]]
                     );
 
                     emit FeeCollection(_now, totalFee);
 
                     totalFee += tokenFee;
 
-                    tokenFeesToCollect[_symbols[i]] = 0;
+                    _tokenFeesToCollect[_symbols[i]] = 0;
 
-                    lastFeeWithdrawalDates[_symbols[i]] = _now;
+                    _lastFeeWithdrawalDates[_symbols[i]] = _now;
                 }
             }
         }

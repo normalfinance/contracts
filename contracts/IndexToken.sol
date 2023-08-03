@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-// Interfaces
-import "./interfaces/IProxy.sol";
-
 // Upgradeable Modules
 import "../node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "../node_modules/@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
@@ -44,16 +41,13 @@ contract IndexToken is
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
 
-    IProxy private proxy;
-
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
         string calldata _name,
-        string calldata _symbol,
-        IProxy _proxyAddress
+        string calldata _symbol
     ) public initializer {
         __ERC20_init(_name, _symbol);
         __ERC20Burnable_init();
@@ -65,17 +59,6 @@ contract IndexToken is
         _grantRole(SNAPSHOT_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
         _grantRole(MINTER_ROLE, msg.sender);
-
-        proxy = _proxyAddress;
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            View functions
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Returns the...
-    function getProxy() public view virtual returns (IProxy) {
-        return proxy;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -96,27 +79,6 @@ contract IndexToken is
     /// @param _amount ...
     function mint(address _to, uint256 _amount) public onlyRole(MINTER_ROLE) {
         _mint(_to, _amount);
-    }
-
-    /// @notice Explain to an end user what this does
-    /// @dev Explain to a developer any extra details
-    /// @param _amount ...
-    function mintToProxy(uint256 _amount) public onlyRole(MINTER_ROLE) {
-        _mint(address(proxy), _amount);
-    }
-
-    /// @notice Explain to an end user what this does
-    /// @dev Explain to a developer any extra details
-    /// @param _amount ...
-    /// @param _accounts ...
-    /// @param _investments ...
-    function mintWithAllowance(
-        uint256 _amount,
-        address[] calldata _accounts,
-        uint256[] calldata _investments
-    ) public onlyRole(MINTER_ROLE) {
-        _mint(address(proxy), _amount);
-        getProxy().updateBalances(_accounts, _investments);
     }
 
     /*///////////////////////////////////////////////////////////////
