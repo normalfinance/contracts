@@ -14,9 +14,13 @@ import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 // Upgradeable Modules
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
+import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeReceiver.sol";
+import "../lib/wormhole-solidity-sdk/src/WormholeRelayerSDK.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -35,8 +39,10 @@ contract Vault is
     IVault,
     Initializable,
     PausableUpgradeable,
-    AccessControlUpgradeable,
-    ReentrancyGuard
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IWormholeReceiver
 {
     using ECDSA for bytes32;
 
@@ -47,18 +53,14 @@ contract Vault is
     uint256 constant TEN_THOUSAND = 10000;
     uint256 constant ONE_YEAR = 31556952;
 
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    bytes32 public constant FEE_CONTROLLER_ROLE =
-        keccak256("FEE_CONTROLLER_ROLE");
-
-    address payable private _feeController;
-
     uint256 private _annualFee; // bps
     mapping(bytes32 => uint256) private _lastFeeWithdrawalDates;
 
     address private _indexToken;
     mapping(bytes32 => address) private _whitelistedTokens;
     mapping(bytes32 => uint256) private _tokenFeesToCollect;
+
+    IWormholeRelayer public immutable wormholeRelayer;
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
@@ -68,12 +70,11 @@ contract Vault is
     receive() external payable virtual {}
 
     function initialize(
-        address _aPauser,
-        address payable _aFeeController,
         address _anIndexTokenAddress,
         uint256 _anAnnualFee,
         bytes32[] memory _tokenSymbols,
-        address[] memory _tokenAddresses
+        address[] memory _tokenAddresses,
+        address _wormholeRelayer
     ) public initializer {
         if (_anAnnualFee <= 0 || 5000 < _anAnnualFee)
             revert InvalidAnnualFee(_anAnnualFee);
@@ -81,13 +82,8 @@ contract Vault is
             revert UnevenArrays();
 
         __Pausable_init();
-        __AccessControl_init();
-
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, _aPauser);
-        _grantRole(FEE_CONTROLLER_ROLE, _aFeeController);
-
-        _feeController = _aFeeController;
+        __Ownable_init();
+        __UUPSUpgradeable_init();
 
         _annualFee = _anAnnualFee;
 
@@ -98,6 +94,8 @@ contract Vault is
             _tokenFeesToCollect[_tokenSymbols[i]] = 0;
             _lastFeeWithdrawalDates[_tokenSymbols[i]] = getOneMonthAgo();
         }
+
+        wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -138,57 +136,148 @@ contract Vault is
         return _whitelistedTokens[_symbol];
     }
 
+    /// @notice Returns the _account balance.
+    function getTokenBalance() public view virtual returns (uint256) {
+        return IERC20(_tokenAddress).balanceOf(address(this));
+    }
+
     /*///////////////////////////////////////////////////////////////
                             External functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deposits tokens into the Vault
-    /// @dev
-    /// @param _symbol Desired token contract address
-    /// @param _amount Number of tokens to deposit
-    function deposit(
-        bytes32 _symbol,
-        uint256 _amount
-    ) external whenNotPaused nonReentrant {
-        if (_whitelistedTokens[_symbol] == address(0))
-            revert UnsupportedToken(_symbol);
-        if (_amount <= 0) revert InvalidAmount(_amount);
+    function receiveWormholeMessages(
+        bytes memory payload,
+        bytes[] memory, // additionalVaas
+        bytes32, // address that called 'sendPayloadToEvm' (HelloWormhole contract address)
+        uint16 sourceChain,
+        bytes32 deliveryHash
+    )
+        public
+        payable
+        override
+        onlyWormholeRelayer
+        isRegisteredSender(sourceChain, sourceAddress)
+        replayProtect(deliveryHash)
+    {
+        // Parse the payload and do the corresponding actions!
+        (
+            SharedStructs.WithdrawRequest _withdrawal,
+            bytes32 _hash,
+            bytes _signature,
 
-        IERC20(_whitelistedTokens[_symbol]).transferFrom(
-            msg.sender,
-            address(this),
-            _amount
-        );
-        emit Deposit(msg.sender, _symbol, _amount);
+        ) = abi.decode(payload, (string, address));
+
+        _withdraw(_withdrawal, _hash, _signature);
+
+        emit GreetingReceived(latestGreeting, sourceChain, sender);
     }
 
     /// @notice Withdrawals tokens from the Vault
     /// @dev
     /// @param withdrawal ...
-    /// @param _toBurn Quantity of Index Tokens to burn for withdrawal
     function withdraw(
         SharedStructs.WithdrawRequest calldata _withdrawal,
-        uint256 _toBurn,
         bytes32 _hash,
         bytes calldata _signature
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    ) external onlyOwner nonReentrant {
+        _withdraw(_withdrawal, _hash, _signature);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                        Admin functions
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Pauses `whenNotPaused` functions for emergencies
+    function pause() public onlyOwner {
+        _pause();
+    }
+
+    /// @notice Unpauses `whenNotPaused` functions
+    function unpause() public onlyOwner {
+        _unpause();
+    }
+
+    /// @notice
+    function whitelistToken(
+        bytes32 _symbol,
+        address _tokenAddress
+    ) external onlyOwner {
+        if (_tokenAddress == address(0)) revert InvalidAddress(_tokenAddress);
+
+        _whitelistedTokens[_symbol] = _tokenAddress;
+        _tokenFeesToCollect[_symbol] = 0;
+        _lastFeeWithdrawalDates[_symbol] = getOneMonthAgo();
+
+        emit Whitelist(_symbol);
+    }
+
+    /// @notice Updates Vault annual fee
+    /// @dev
+    /// @param _newAnnualFee Updated annual basis points fee
+    function adjustFee(uint256 _newAnnualFee) external onlyOwner {
+        if (_newAnnualFee <= 0 || 5000 < _newAnnualFee)
+            revert InvalidAnnualFee(_newAnnualFee);
+        _annualFee = _newAnnualFee;
+    }
+
+    /// @notice Withdraws Vault fee
+    /// @dev
+    /// @param _symbols List of token symbols to withdraw fees for
+    /// @return totalFee
+    function withdrawFee(
+        bytes32[] memory _symbols
+    ) external onlyOwner nonReentrant returns (uint256 totalFee) {
+        uint _now = block.timestamp;
+
+        for (uint256 i = 0; i < _symbols.length; ++i) {
+            if (_whitelistedTokens[_symbols[i]] != address(0)) {
+                uint256 vaultBalance = IERC20(_whitelistedTokens[_symbols[i]])
+                    .balanceOf(address(this));
+
+                if (vaultBalance > 0) {
+                    uint256 timeDelta = block.timestamp -
+                        _lastFeeWithdrawalDates[_symbols[i]];
+
+                    uint256 tokenFee = (((_annualFee * vaultBalance) *
+                        timeDelta) /
+                        ONE_YEAR /
+                        TEN_THOUSAND);
+
+                    IERC20(_whitelistedTokens[_symbols[i]]).transfer(
+                        _feeController,
+                        tokenFee + _tokenFeesToCollect[_symbols[i]]
+                    );
+
+                    emit FeeCollection(_now, totalFee);
+
+                    totalFee += tokenFee;
+
+                    _tokenFeesToCollect[_symbols[i]] = 0;
+
+                    _lastFeeWithdrawalDates[_symbols[i]] = _now;
+                }
+            }
+        }
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            Internal functions
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice
+    /// @dev
+    /// @param _withdrawal Withdrawal requests
+    /// @param _hash ...
+    /// @param _signature ...
+    function _withdraw(
+        SharedStructs.WithdrawRequest calldata _withdrawal,
+        bytes32 _hash,
+        bytes calldata _signature
+    ) internal {
         uint256 preGas = gasleft();
 
         if (_whitelistedTokens[_withdrawal.symbol] == address(0))
             revert UnsupportedToken(_withdrawal.symbol);
-        if (_withdrawal.amount <= 0) revert InvalidAmount(_withdrawal.amount);
-        if (
-            _withdrawal.amount >
-            IERC20(_whitelistedTokens[_withdrawal.symbol]).balanceOf(
-                address(this)
-            ) -
-                _tokenFeesToCollect[_withdrawal.symbol]
-        ) revert InsuffientVaultFunds();
-        if (_withdrawal.to == address(0)) revert InvalidAddress(_withdrawal.to);
-        if (
-            _toBurn <= 0 ||
-            _toBurn > IERC20(_indexToken).balanceOf(_withdrawal.owner)
-        ) revert InsuffientAccountFunds();
         if (
             SignatureChecker.isValidSignatureNow(
                 _withdrawal.owner,
@@ -225,87 +314,7 @@ contract Vault is
         );
     }
 
-    /*///////////////////////////////////////////////////////////////
-                        Admin functions
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Pauses `whenNotPaused` functions for emergencies
-    function pause() public onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    /// @notice Unpauses `whenNotPaused` functions
-    function unpause() public onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    /// @notice
-    function whitelistToken(
-        bytes32 _symbol,
-        address _tokenAddress
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_tokenAddress == address(0)) revert InvalidAddress(_tokenAddress);
-
-        _whitelistedTokens[_symbol] = _tokenAddress;
-        _tokenFeesToCollect[_symbol] = 0;
-        _lastFeeWithdrawalDates[_symbol] = getOneMonthAgo();
-
-        emit Whitelist(_symbol);
-    }
-
-    /// @notice Updates Vault annual fee
-    /// @dev
-    /// @param _newAnnualFee Updated annual basis points fee
-    function adjustFee(
-        uint256 _newAnnualFee
-    ) external onlyRole(FEE_CONTROLLER_ROLE) {
-        if (_newAnnualFee <= 0 || 5000 < _newAnnualFee)
-            revert InvalidAnnualFee(_newAnnualFee);
-        _annualFee = _newAnnualFee;
-    }
-
-    /// @notice Withdraws Vault fee
-    /// @dev
-    /// @param _symbols List of token symbols to withdraw fees for
-    /// @return totalFee
-    function withdrawFee(
-        bytes32[] memory _symbols
-    )
-        external
-        onlyRole(FEE_CONTROLLER_ROLE)
-        nonReentrant
-        returns (uint256 totalFee)
-    {
-        uint _now = block.timestamp;
-
-        for (uint256 i = 0; i < _symbols.length; ++i) {
-            if (_whitelistedTokens[_symbols[i]] != address(0)) {
-                uint256 vaultBalance = IERC20(_whitelistedTokens[_symbols[i]])
-                    .balanceOf(address(this));
-
-                if (vaultBalance > 0) {
-                    uint256 timeDelta = block.timestamp -
-                        _lastFeeWithdrawalDates[_symbols[i]];
-
-                    uint256 tokenFee = (((_annualFee * vaultBalance) *
-                        timeDelta) /
-                        ONE_YEAR /
-                        TEN_THOUSAND);
-
-                    IERC20(_whitelistedTokens[_symbols[i]]).transfer(
-                        _feeController,
-                        tokenFee + _tokenFeesToCollect[_symbols[i]]
-                    );
-
-                    emit FeeCollection(_now, totalFee);
-
-                    totalFee += tokenFee;
-
-                    _tokenFeesToCollect[_symbols[i]] = 0;
-
-                    _lastFeeWithdrawalDates[_symbols[i]] = _now;
-                }
-            }
-        }
-    }
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 }

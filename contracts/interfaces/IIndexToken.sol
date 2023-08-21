@@ -2,6 +2,8 @@
 pragma solidity ^0.8.17;
 
 interface IIndexToken {
+    error InvalidSignature();
+
     function DEFAULT_ADMIN_ROLE() external view returns (bytes32);
 
     function DOMAIN_SEPARATOR() external view returns (bytes32);
