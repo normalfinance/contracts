@@ -3,7 +3,6 @@ pragma solidity ^0.8.17;
 
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/IVault.sol";
 
 // Lib
 import "./lib/SharedStructs.sol";
@@ -18,9 +17,9 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+// Wormhole
 import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
 import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeReceiver.sol";
-import "../lib/wormhole-solidity-sdk/src/WormholeRelayerSDK.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -31,12 +30,17 @@ import "../lib/wormhole-solidity-sdk/src/WormholeRelayerSDK.sol";
 // | $$ \  $$|  $$$$$$/| $$      | $$ | $$ | $$|  $$$$$$$| $$
 // |__/  \__/ \______/ |__/      |__/ |__/ |__/ \_______/|__/
 
+error InvalidSignature();
+error UnevenArrays();
+error InvalidAnnualFee(uint256);
+error UnsupportedToken(bytes32 token);
+error InvalidAddress(address);
+
 /// @title
 /// @author Joshua Blew <joshua@normalfinance.io>
 /// @notice
 /// @dev
 contract Vault is
-    IVault,
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
@@ -56,11 +60,20 @@ contract Vault is
     uint256 private _annualFee; // bps
     mapping(bytes32 => uint256) private _lastFeeWithdrawalDates;
 
-    address private _indexToken;
     mapping(bytes32 => address) private _whitelistedTokens;
     mapping(bytes32 => uint256) private _tokenFeesToCollect;
 
-    IWormholeRelayer public immutable wormholeRelayer;
+    IWormholeRelayer public wormholeRelayer;
+    mapping(bytes32 => bool) public seenDeliveryVaaHashes;
+
+    event Withdrawal(
+        address indexed from,
+        bytes32 symbol,
+        uint256 amount,
+        uint256 proratedFee
+    );
+    event FeeCollection(uint timestamp, uint256 totalFee);
+    event Whitelist(bytes32 symbol);
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
@@ -70,7 +83,6 @@ contract Vault is
     receive() external payable virtual {}
 
     function initialize(
-        address _anIndexTokenAddress,
         uint256 _anAnnualFee,
         bytes32[] memory _tokenSymbols,
         address[] memory _tokenAddresses,
@@ -86,8 +98,6 @@ contract Vault is
         __UUPSUpgradeable_init();
 
         _annualFee = _anAnnualFee;
-
-        _indexToken = _anIndexTokenAddress;
 
         for (uint256 i = 0; i < _tokenSymbols.length; ++i) {
             _whitelistedTokens[_tokenSymbols[i]] = _tokenAddresses[i];
@@ -137,7 +147,9 @@ contract Vault is
     }
 
     /// @notice Returns the _account balance.
-    function getTokenBalance() public view virtual returns (uint256) {
+    function getTokenBalance(
+        address _tokenAddress
+    ) public view virtual returns (uint256) {
         return IERC20(_tokenAddress).balanceOf(address(this));
     }
 
@@ -151,25 +163,27 @@ contract Vault is
         bytes32, // address that called 'sendPayloadToEvm' (HelloWormhole contract address)
         uint16 sourceChain,
         bytes32 deliveryHash
-    )
-        public
-        payable
-        override
-        onlyWormholeRelayer
-        isRegisteredSender(sourceChain, sourceAddress)
-        replayProtect(deliveryHash)
-    {
+    ) public payable override {
+        require(msg.sender == address(wormholeRelayer), "Only relayer allowed");
+
+        // Ensure no duplicate deliveries
+        require(
+            !seenDeliveryVaaHashes[deliveryHash],
+            "Message already processed"
+        );
+        seenDeliveryVaaHashes[deliveryHash] = true;
+
         // Parse the payload and do the corresponding actions!
         (
-            SharedStructs.WithdrawRequest _withdrawal,
+            SharedStructs.WithdrawRequest memory _withdrawal,
             bytes32 _hash,
-            bytes _signature,
-
-        ) = abi.decode(payload, (string, address));
+            bytes memory _signature
+        ) = abi.decode(
+                payload,
+                (SharedStructs.WithdrawRequest, bytes32, bytes)
+            );
 
         _withdraw(_withdrawal, _hash, _signature);
-
-        emit GreetingReceived(latestGreeting, sourceChain, sender);
     }
 
     /// @notice Withdrawals tokens from the Vault
@@ -184,7 +198,7 @@ contract Vault is
     }
 
     /*///////////////////////////////////////////////////////////////
-                        Admin functions
+                        Owner functions
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Pauses `whenNotPaused` functions for emergencies
@@ -225,7 +239,7 @@ contract Vault is
     /// @param _symbols List of token symbols to withdraw fees for
     /// @return totalFee
     function withdrawFee(
-        bytes32[] memory _symbols
+        bytes32[] calldata _symbols
     ) external onlyOwner nonReentrant returns (uint256 totalFee) {
         uint _now = block.timestamp;
 
@@ -244,7 +258,7 @@ contract Vault is
                         TEN_THOUSAND);
 
                     IERC20(_whitelistedTokens[_symbols[i]]).transfer(
-                        _feeController,
+                        owner(),
                         tokenFee + _tokenFeesToCollect[_symbols[i]]
                     );
 
@@ -270,9 +284,9 @@ contract Vault is
     /// @param _hash ...
     /// @param _signature ...
     function _withdraw(
-        SharedStructs.WithdrawRequest calldata _withdrawal,
+        SharedStructs.WithdrawRequest memory _withdrawal,
         bytes32 _hash,
-        bytes calldata _signature
+        bytes memory _signature
     ) internal {
         uint256 preGas = gasleft();
 

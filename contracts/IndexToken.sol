@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-// Interfaces
-import "./interfaces/IIndexToken.sol";
-
 // Lib
 import "./lib/SharedStructs.sol";
 
 // Modules
+import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {Blacklistable} from "./Blacklistable.sol";
 
+// Upgradeable Modules
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -18,8 +18,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUp
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {Blacklistable} from "./Blacklistable.sol";
-
+// Wormhole
 import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
 
 //  /$$   /$$                                             /$$
@@ -31,17 +30,19 @@ import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
 // | $$ \  $$|  $$$$$$/| $$      | $$ | $$ | $$|  $$$$$$$| $$
 // |__/  \__/ \______/ |__/      |__/ |__/ |__/ \_______/|__/
 
+error InvalidSignature();
+
 contract IndexToken is
-    IIndexToken,
     Initializable,
     ERC20Upgradeable,
     ERC20BurnableUpgradeable,
     PausableUpgradeable,
     OwnableUpgradeable,
     ERC20PermitUpgradeable,
-    UUPSUpgradeable,
-    Blacklistable
+    UUPSUpgradeable
 {
+    using SafeMath for uint256;
+
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
@@ -51,10 +52,10 @@ contract IndexToken is
     mapping(address => bool) internal minters;
     mapping(address => uint256) internal minterAllowed;
 
-    mapping(address => uint256) private ownerships;
+    mapping(address => uint256) private ownershipByAddress;
 
     uint256 constant GAS_LIMIT = 50_000;
-    IWormholeRelayer public immutable wormholeRelayer;
+    IWormholeRelayer public wormholeRelayer;
 
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
@@ -81,6 +82,8 @@ contract IndexToken is
         __Ownable_init();
         __ERC20Permit_init(tokenName);
         __UUPSUpgradeable_init();
+
+        masterMinter = newMasterMinter;
 
         wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
     }
@@ -129,7 +132,7 @@ contract IndexToken is
     function getOwnership(
         address _account
     ) public view virtual returns (uint256) {
-        return ownerships[_account];
+        return ownershipByAddress[_account];
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -154,14 +157,7 @@ contract IndexToken is
     function mint(
         address _to,
         uint256 _amount
-    )
-        external
-        whenNotPaused
-        onlyMinters
-        notBlacklisted(msg.sender)
-        notBlacklisted(_to)
-        returns (bool)
-    {
+    ) external whenNotPaused onlyMinters returns (bool) {
         require(_to != address(0), "IndexToken: mint to the zero address");
         require(_amount > 0, "IndexToken: mint amount not greater than 0");
 
@@ -186,7 +182,7 @@ contract IndexToken is
         bytes calldata _signature,
         uint16 refundChain,
         address refundAddress
-    ) external whenNotPaused onlyMinters notBlacklisted(msg.sender) {
+    ) external payable whenNotPaused onlyMinters {
         if (
             SignatureChecker.isValidSignatureNow(
                 _withdrawal.owner,
@@ -263,7 +259,7 @@ contract IndexToken is
     function updateMasterMinter(address _newMasterMinter) external onlyOwner {
         require(
             _newMasterMinter != address(0),
-            "FiatToken: new masterMinter is the zero address"
+            "IndexToken: new masterMinter is the zero address"
         );
         masterMinter = _newMasterMinter;
         emit MasterMinterChanged(masterMinter);
@@ -281,7 +277,7 @@ contract IndexToken is
         address _account,
         uint256 _newOwnership
     ) internal {
-        ownerships[_account] += _newOwnership;
+        ownershipByAddress[_account] += _newOwnership;
     }
 
     function _beforeTokenTransfer(
