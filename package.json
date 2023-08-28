@@ -63,6 +63,7 @@
     "hardhat-gas-reporter": "^1.0.8",
     "hardhat-interface-generator": "^0.0.6",
     "husky": "^8.0.3",
+    "np": "^8.0.4",
     "pinst": "^3.0.0",
     "prettier": "^2.6.2",
     "prettier-plugin-solidity": "^1.1.2",
@@ -112,5 +113,8 @@
     "hooks": {
       "pre-commit": ""
     }
+  },
+  "engines": {
+    "node": ">=16.15.1"
   }
 }
