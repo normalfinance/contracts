@@ -1,14 +1,11 @@
 {
-  "name": "@normalfi/contracts",
+  "name": "@normalfinance/contracts",
   "version": "0.1.0",
   "description": "Normal Index contracts",
   "main": "index.ts",
   "files": [
-    "build",
     "contracts/**/*.sol",
-    "artifacts",
-    "deployments/mainnet/*.json",
-    "deployments/archive/**/*.json"
+    "artifacts"
   ],
   "scripts": {
     "clean": "npx hardhat clean",
@@ -105,12 +102,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/normalfi/contracts.git"
+    "url": "git+https://github.com/normalfinance/contracts.git"
   },
   "bugs": {
-    "url": "https://github.com/normalfi/contracts/issues"
+    "url": "https://github.com/normalfinance/contracts/issues"
   },
-  "homepage": "https://github.com/normalfi/contracts#readme",
+  "homepage": "https://github.com/normalfinance/contracts#readme",
   "husky": {
     "hooks": {
       "pre-commit": ""
