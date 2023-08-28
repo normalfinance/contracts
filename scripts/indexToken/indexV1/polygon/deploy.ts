@@ -10,14 +10,6 @@ async function main() {
     address: token.address,
     constructorArguments: [],
   });
-
-  await token.initialize(
-    "NormalToken",
-    "NORM",
-    "0x7D504D497b0ca5386F640aDeA2bb86441462d109",
-    "0x0591C25ebd0580E0d4F27A82Fc2e24E7489CB5e0"
-  );
-  console.log("IndexToken initialized");
 }
 
 main().catch((error) => {

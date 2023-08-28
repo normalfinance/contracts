@@ -27,11 +27,11 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
 // Go to https://hardhat.org/config/ to learn more
 
 const config: HardhatUserConfig = {
-  // defaultNetwork: "ganache",
+  defaultNetwork: "hardhat", // ganache
   solidity: {
     compilers: [
       {
-        version: "0.8.17",
+        version: "0.8.19",
         settings: {
           optimizer: { enabled: true, runs: 800 },
         },
@@ -46,13 +46,19 @@ const config: HardhatUserConfig = {
       },
       allowUnlimitedContractSize: true,
       chainId: 31337,
+      blockGasLimit: 100000000000000,
+    },
+    localhost: {
+      allowUnlimitedContractSize: true,
     },
     ganache: {
       chainId: 1337,
       url: "http://localhost:8545",
+      allowUnlimitedContractSize: true,
+      blockGasLimit: 100000000000000,
       accounts: {
         mnemonic:
-          "garbage miracle journey siren inch method pulse learn month grid frame business",
+          "embark grab raccoon buzz success hint accuse shell hint vivid milk insect",
         path: "m/44'/60'/0'/0",
         initialIndex: 0,
         count: 20,
@@ -186,16 +192,18 @@ const config: HardhatUserConfig = {
       url: `https://testnet.hashio.io/api`,
       accounts: walletUtils.makeKeyList(),
       chainId: 296,
+      blockGasLimit: 500000,
     },
     filecoinMainnet: {
-      url: ``,
+      url: `https://rpc.ankr.com/filecoin`,
       accounts: walletUtils.makeKeyList(),
       chainId: 314,
     },
     filecoinTestnet: {
-      url: ``,
+      // Calibration Testnet
+      url: `https://rpc.ankr.com/filecoin_testnet`,
       accounts: walletUtils.makeKeyList(),
-      chainId: 0,
+      chainId: 314159,
     },
   },
   gasReporter: {
@@ -223,6 +231,16 @@ const config: HardhatUserConfig = {
       filecoinTestnet: process.env.FILECOIN_API_KEY || "",
       filecoin: process.env.FILECOIN_API_KEY || "",
     },
+    customChains: [
+      {
+        network: "filecoin-calibration",
+        chainId: 314159,
+        urls: {
+          apiURL: "",
+          browserURL: "",
+        },
+      },
+    ],
   },
 };
 

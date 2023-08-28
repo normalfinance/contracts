@@ -1,13 +1,6 @@
 import { formatBytes32String } from "ethers/lib/utils";
 import { ethers, run } from "hardhat";
 
-const BINANCE_VAULT_PAUSER_ADDRESS =
-  process.env.BINANCE_VAULT_PAUSER_ADDRESS || "";
-const BINANCE_VAULT_FEE_CONTROLLER_ADDRESS =
-  process.env.BINANCE_VAULT_FEE_CONTROLLER_ADDRESS || "";
-const BINANCE_INDEX_TOKEN_ADDRESS =
-  process.env.BINANCE_INDEX_TOKEN_ADDRESS || "";
-
 async function main() {
   const Vault = await ethers.getContractFactory("Vault");
   const vault = await Vault.deploy();
@@ -20,12 +13,23 @@ async function main() {
   });
 
   await vault.initialize(
-    BINANCE_VAULT_PAUSER_ADDRESS,
-    BINANCE_VAULT_FEE_CONTROLLER_ADDRESS,
-    BINANCE_INDEX_TOKEN_ADDRESS,
     50,
-    [formatBytes32String("BNB")],
-    ["0xB8c77482e45F1F44dE1745F52C74426C631bDD52"] // TODO: this is from Etherscan token tracker, cannot find BSC address
+    [
+      formatBytes32String("WBTC"),
+      formatBytes32String("SHIB"),
+      formatBytes32String("LINK"),
+      formatBytes32String("UNI"),
+      formatBytes32String("LDO"),
+      formatBytes32String("AAVE"),
+    ],
+    [
+      "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+      "00x95ad61b0a150d79219dcf64e1e6cc01f0b64c4cex0",
+      "0x514910771af9ca656af840dff83e8264ecf986ca",
+      "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+      "0x5a98fcbea516cf06857215779fd812ca3bef1b32",
+      "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+    ]
   );
   console.log("Vault initialized");
 }

@@ -1,25 +1,19 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
-
-// Interfaces
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-// Lib
-import "./lib/SharedStructs.sol";
+pragma solidity ^0.8.19;
 
 // Modules
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-
-// Upgradeable Modules
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-// Wormhole
-import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
-import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeReceiver.sol";
+// Lib
+import "./lib/SharedStructs.sol";
+
+// Interfaces
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -36,20 +30,16 @@ error InvalidAnnualFee(uint256);
 error UnsupportedToken(bytes32 token);
 error InvalidAddress(address);
 
-/// @title
+/// @title Vault contract
 /// @author Joshua Blew <joshua@normalfinance.io>
-/// @notice
-/// @dev
+/// @notice Holds deposits for crypto funds and enables authorized withdrawals
 contract Vault is
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
-    IWormholeReceiver
+    ReentrancyGuard
 {
-    using ECDSA for bytes32;
-
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
@@ -57,14 +47,13 @@ contract Vault is
     uint256 constant TEN_THOUSAND = 10000;
     uint256 constant ONE_YEAR = 31556952;
 
-    uint256 private _annualFee; // bps
+    uint256 private _annualFee;
     mapping(bytes32 => uint256) private _lastFeeWithdrawalDates;
 
     mapping(bytes32 => address) private _whitelistedTokens;
     mapping(bytes32 => uint256) private _tokenFeesToCollect;
 
-    IWormholeRelayer public wormholeRelayer;
-    mapping(bytes32 => bool) public seenDeliveryVaaHashes;
+    mapping(bytes => bool) public seenWithdrawalSignatures;
 
     event Withdrawal(
         address indexed from,
@@ -82,11 +71,15 @@ contract Vault is
     // solhint-disable-next-line no-empty-blocks
     receive() external payable virtual {}
 
+    /// @notice Initializes the contract after deployment
+    /// @dev Replaces the constructor() to support upgradeability (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
+    /// @param _anAnnualFee The Basis Point fee applied to all deposits
+    /// @param _tokenSymbols List of supported tokens
+    /// @param _tokenAddresses List of supported token addresses
     function initialize(
         uint256 _anAnnualFee,
         bytes32[] memory _tokenSymbols,
-        address[] memory _tokenAddresses,
-        address _wormholeRelayer
+        address[] memory _tokenAddresses
     ) public initializer {
         if (_anAnnualFee <= 0 || 5000 < _anAnnualFee)
             revert InvalidAnnualFee(_anAnnualFee);
@@ -104,25 +97,18 @@ contract Vault is
             _tokenFeesToCollect[_tokenSymbols[i]] = 0;
             _lastFeeWithdrawalDates[_tokenSymbols[i]] = getOneMonthAgo();
         }
-
-        wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
     }
 
     /*///////////////////////////////////////////////////////////////
                             View functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns timestamp of one month ago in seconds.
-    function getOneMonthAgo() public view virtual returns (uint) {
-        return block.timestamp - (60 * 60 * 24 * 30);
-    }
-
-    /// @notice Returns the Vault fee.
+    /// @notice Returns the Vault fee
     function getFee() public view virtual returns (uint256) {
         return _annualFee;
     }
 
-    /// @notice Returns the timestamp when the last fee was collected.
+    /// @notice Returns the timestamp when the last fee was collected
     /// @param _symbol Desired token last fee withdrawal date
     function getLastFeeWithdrawalDate(
         bytes32 _symbol
@@ -130,7 +116,7 @@ contract Vault is
         return _lastFeeWithdrawalDates[_symbol];
     }
 
-    /// @notice Returns the outstanding fees to collect for a token.
+    /// @notice Returns the outstanding fees to collect for a token
     /// @param _symbol Desired token fees to collect
     function getTokenFeesToCollect(
         bytes32 _symbol
@@ -138,7 +124,7 @@ contract Vault is
         return _tokenFeesToCollect[_symbol];
     }
 
-    /// @notice Returns the token contract address.
+    /// @notice Returns the token contract address
     /// @param _symbol Desired token contract address
     function getWhitelistedToken(
         bytes32 _symbol
@@ -146,55 +132,34 @@ contract Vault is
         return _whitelistedTokens[_symbol];
     }
 
-    /// @notice Returns the _account balance.
-    function getTokenBalance(
-        address _tokenAddress
-    ) public view virtual returns (uint256) {
-        return IERC20(_tokenAddress).balanceOf(address(this));
-    }
-
     /*///////////////////////////////////////////////////////////////
                             External functions
     //////////////////////////////////////////////////////////////*/
 
-    function receiveWormholeMessages(
-        bytes memory payload,
-        bytes[] memory, // additionalVaas
-        bytes32, // address that called 'sendPayloadToEvm' (HelloWormhole contract address)
-        uint16 sourceChain,
-        bytes32 deliveryHash
-    ) public payable override {
-        require(msg.sender == address(wormholeRelayer), "Only relayer allowed");
-
-        // Ensure no duplicate deliveries
-        require(
-            !seenDeliveryVaaHashes[deliveryHash],
-            "Message already processed"
-        );
-        seenDeliveryVaaHashes[deliveryHash] = true;
-
-        // Parse the payload and do the corresponding actions!
-        (
-            SharedStructs.WithdrawRequest memory _withdrawal,
-            bytes32 _hash,
-            bytes memory _signature
-        ) = abi.decode(
-                payload,
-                (SharedStructs.WithdrawRequest, bytes32, bytes)
-            );
-
-        _withdraw(_withdrawal, _hash, _signature);
-    }
-
     /// @notice Withdrawals tokens from the Vault
-    /// @dev
-    /// @param withdrawal ...
+    /// @param _withdrawal Withdrawal info
+    /// @param _hash Message hash of withdrawal
+    /// @param _signature Withdrawal owner signature of withdrawal
     function withdraw(
-        SharedStructs.WithdrawRequest calldata _withdrawal,
+        SharedStructs.WithdrawRequest memory _withdrawal,
         bytes32 _hash,
-        bytes calldata _signature
+        bytes memory _signature
     ) external onlyOwner nonReentrant {
-        _withdraw(_withdrawal, _hash, _signature);
+        if (
+            !SignatureChecker.isValidSignatureNow(
+                _withdrawal.owner,
+                _hash,
+                _signature
+            )
+        ) revert InvalidSignature();
+
+        require(
+            !seenWithdrawalSignatures[_signature],
+            "Vault: Withdrawal already processed"
+        );
+        seenWithdrawalSignatures[_signature] = true;
+
+        _withdraw(_withdrawal);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -211,7 +176,9 @@ contract Vault is
         _unpause();
     }
 
-    /// @notice
+    /// @notice Adds support for a new token
+    /// @param _symbol The token symbol
+    /// @param _tokenAddress The contract address of the token
     function whitelistToken(
         bytes32 _symbol,
         address _tokenAddress
@@ -225,8 +192,7 @@ contract Vault is
         emit Whitelist(_symbol);
     }
 
-    /// @notice Updates Vault annual fee
-    /// @dev
+    /// @notice Updates the annual fee
     /// @param _newAnnualFee Updated annual basis points fee
     function adjustFee(uint256 _newAnnualFee) external onlyOwner {
         if (_newAnnualFee <= 0 || 5000 < _newAnnualFee)
@@ -235,7 +201,6 @@ contract Vault is
     }
 
     /// @notice Withdraws Vault fee
-    /// @dev
     /// @param _symbols List of token symbols to withdraw fees for
     /// @return totalFee
     function withdrawFee(
@@ -278,27 +243,13 @@ contract Vault is
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice
-    /// @dev
-    /// @param _withdrawal Withdrawal requests
-    /// @param _hash ...
-    /// @param _signature ...
+    /// @notice Withdraws tokens stored in the Vault
+    /// @param _withdrawal Withdrawal request
     function _withdraw(
-        SharedStructs.WithdrawRequest memory _withdrawal,
-        bytes32 _hash,
-        bytes memory _signature
+        SharedStructs.WithdrawRequest memory _withdrawal
     ) internal {
-        uint256 preGas = gasleft();
-
         if (_whitelistedTokens[_withdrawal.symbol] == address(0))
             revert UnsupportedToken(_withdrawal.symbol);
-        if (
-            SignatureChecker.isValidSignatureNow(
-                _withdrawal.owner,
-                _hash,
-                _signature
-            ) == false
-        ) revert InvalidSignature();
 
         // Calculate prorated fee
         uint256 timeDelta = block.timestamp -
@@ -307,10 +258,7 @@ contract Vault is
             ONE_YEAR /
             TEN_THOUSAND);
 
-        // Calculate gas cost of transaction
-        uint256 actualGasCost = (preGas - gasleft()) * tx.gasprice;
-
-        uint256 totalFee = proratedFee + actualGasCost;
+        uint256 totalFee = proratedFee;
 
         // Record fee for delayed collection
         _tokenFeesToCollect[_withdrawal.symbol] += totalFee;
@@ -326,6 +274,11 @@ contract Vault is
             _withdrawal.amount,
             proratedFee
         );
+    }
+
+    /// @notice Returns timestamp of one month ago in seconds
+    function getOneMonthAgo() internal view virtual returns (uint) {
+        return block.timestamp - (60 * 60 * 24 * 30);
     }
 
     function _authorizeUpgrade(

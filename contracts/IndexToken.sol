@@ -1,15 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
-
-// Lib
-import "./lib/SharedStructs.sol";
+pragma solidity ^0.8.19;
 
 // Modules
 import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {Blacklistable} from "./Blacklistable.sol";
-
-// Upgradeable Modules
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -18,8 +12,8 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUp
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-// Wormhole
-import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
+// Lib
+import "./lib/SharedStructs.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -30,8 +24,9 @@ import "../lib/wormhole-solidity-sdk/src/interfaces/IWormholeRelayer.sol";
 // | $$ \  $$|  $$$$$$/| $$      | $$ | $$ | $$|  $$$$$$$| $$
 // |__/  \__/ \______/ |__/      |__/ |__/ |__/ \_______/|__/
 
-error InvalidSignature();
-
+/// @title IndexToken contract
+/// @author Joshua Blew <joshua@normalfinance.io>
+/// @notice ERC-20 token representing ownership in a Vault
 contract IndexToken is
     Initializable,
     ERC20Upgradeable,
@@ -52,10 +47,9 @@ contract IndexToken is
     mapping(address => bool) internal minters;
     mapping(address => uint256) internal minterAllowed;
 
-    mapping(address => uint256) private ownershipByAddress;
+    mapping(address => uint256) internal ownershipByAddress;
 
-    uint256 constant GAS_LIMIT = 50_000;
-    IWormholeRelayer public wormholeRelayer;
+    mapping(bytes => bool) public seenWithdrawalSignatures;
 
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
@@ -65,40 +59,38 @@ contract IndexToken is
                     Constructor, Initializer, Modifiers
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Initializes the contract after deployment
+    /// @dev Replaces the constructor() to support upgradeability (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
+    /// @param _tokenName The name of the token
+    /// @param _tokenSymbol The tokens symbol
+    /// @param _newMasterMinter An address to configure all minters
     function initialize(
-        string memory tokenName,
-        string memory tokenSymbol,
-        address newMasterMinter,
-        address _wormholeRelayer
+        string memory _tokenName,
+        string memory _tokenSymbol,
+        address _newMasterMinter
     ) public initializer {
         require(
-            newMasterMinter != address(0),
+            _newMasterMinter != address(0),
             "IndexToken: new masterMinter is the zero address"
         );
 
-        __ERC20_init(tokenName, tokenSymbol);
+        __ERC20_init(_tokenName, _tokenSymbol);
         __ERC20Burnable_init();
         __Pausable_init();
         __Ownable_init();
-        __ERC20Permit_init(tokenName);
+        __ERC20Permit_init(_tokenName);
         __UUPSUpgradeable_init();
 
-        masterMinter = newMasterMinter;
-
-        wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
+        masterMinter = _newMasterMinter;
     }
 
-    /**
-     * @dev Throws if called by any account other than a minter
-     */
+    /// @notice Throws if called by any account other than a minter
     modifier onlyMinters() {
         require(minters[msg.sender], "IndexToken: caller is not a minter");
         _;
     }
 
-    /**
-     * @dev Throws if called by any account other than the masterMinter
-     */
+    /// @notice Throws if called by any account other than the masterMinter
     modifier onlyMasterMinter() {
         require(
             msg.sender == masterMinter,
@@ -111,24 +103,20 @@ contract IndexToken is
                             View functions
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @dev Get minter allowance for an account
-     * @param minter The address of the minter
-     */
-    function minterAllowance(address minter) external view returns (uint256) {
-        return minterAllowed[minter];
+    /// @notice Get minter allowance for an account
+    /// @param _minter The address of the minter
+    function minterAllowance(address _minter) external view returns (uint256) {
+        return minterAllowed[_minter];
     }
 
-    /**
-     * @dev Checks if account is a minter
-     * @param account The address to check
-     */
-    function isMinter(address account) external view returns (bool) {
-        return minters[account];
+    /// @notice Checks if account is a minter
+    /// @param _account The address to check
+    function isMinter(address _account) external view returns (bool) {
+        return minters[_account];
     }
 
-    /// @notice Returns the _account balance.
-    /// @param _account Desired _account
+    /// @notice Get account index token ownership
+    /// @param _account The address of the account
     function getOwnership(
         address _account
     ) public view virtual returns (uint256) {
@@ -139,21 +127,21 @@ contract IndexToken is
                             External functions
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Pauses `whenNotPaused` functions for emergencies
     function pause() public onlyOwner {
         _pause();
     }
 
+    /// @notice Unpauses `whenNotPaused` functions
     function unpause() public onlyOwner {
         _unpause();
     }
 
-    /**
-     * @dev Function to mint tokens
-     * @param _to The address that will receive the minted tokens.
-     * @param _amount The amount of tokens to mint. Must be less than or equal
-     * to the minterAllowance of the caller.
-     * @return A boolean that indicates if the operation was successful.
-     */
+    /// @notice Function to mint tokens
+    /// @dev Mint tokens then update the ownership and mint allowance
+    /// @param _to The address that will receive the minted tokens
+    /// @param _amount The amount of tokens to mint. Must be less than or equal to the minterAllowance of the caller.
+    /// @return A boolean that indicates if the operation was successful
     function mint(
         address _to,
         uint256 _amount
@@ -169,93 +157,75 @@ contract IndexToken is
 
         _mint(_to, _amount);
 
+        uint256 ownership = ownershipByAddress[_to];
+        ownershipByAddress[_to] = ownership.add(_amount);
+
         minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
 
         return true;
     }
 
-    function burnAndWithdraw(
-        uint16 targetChain,
-        address targetAddress,
-        SharedStructs.WithdrawRequest calldata _withdrawal,
+    /// @notice Function to burn tokens
+    /// @dev Burns tokens then updates account ownership
+    /// @param _amount Number of tokens to burn
+    /// @param _withdrawal Withdrawal info
+    /// @param _hash Message hash of withdrawal
+    /// @param _signature Withdrawal owner signature of withdrawal
+    function burnForWithdraw(
+        uint256 _amount,
+        SharedStructs.WithdrawRequest memory _withdrawal,
         bytes32 _hash,
-        bytes calldata _signature,
-        uint16 refundChain,
-        address refundAddress
-    ) external payable whenNotPaused onlyMinters {
-        if (
+        bytes memory _signature
+    ) external whenNotPaused onlyMinters {
+        require(
             SignatureChecker.isValidSignatureNow(
                 _withdrawal.owner,
                 _hash,
                 _signature
-            ) == false
-        ) revert InvalidSignature();
-
-        // Ensure enough gas for Wormhole
-        uint256 cost = quoteCrossChainGreeting(targetChain);
-        require(msg.value == cost);
-
-        // Burn tokens
-        _burn(_withdrawal.owner, 100);
-
-        // Update ownership
-        _updateOwnership(msg.sender, 100);
-
-        // Trigger withdrawal in the correct Vault
-        wormholeRelayer.sendPayloadToEvm{value: cost}(
-            targetChain,
-            targetAddress,
-            abi.encode(_withdrawal, _hash, _signature), // payload
-            0, // no receiver value needed since we're just passing a message
-            GAS_LIMIT,
-            refundChain,
-            refundAddress
+            ),
+            "IndexToken: invalid withdrawal signature"
         );
+
+        require(
+            !seenWithdrawalSignatures[_signature],
+            "IndexToken: Withdrawal already processed"
+        );
+        seenWithdrawalSignatures[_signature] = true;
+
+        _burn(_withdrawal.owner, _amount);
+
+        uint256 ownership = ownershipByAddress[_withdrawal.owner];
+        ownershipByAddress[_withdrawal.owner] = ownership.sub(_amount);
     }
 
-    /**
-     * @notice Returns the cost (in wei) of a greeting
-     */
-    function quoteCrossChainGreeting(
-        uint16 targetChain
-    ) public view returns (uint256 cost) {
-        (cost, ) = wormholeRelayer.quoteEVMDeliveryPrice(
-            targetChain,
-            0,
-            GAS_LIMIT
-        );
-    }
-
-    /**
-     * @dev Function to add/update a new minter
-     * @param minter The address of the minter
-     * @param minterAllowedAmount The minting amount allowed for the minter
-     * @return True if the operation was successful.
-     */
+    /// @notice Function to add/update a new minter
+    /// @param _minter The address of the minter
+    /// @param _minterAllowedAmount The minting amount allowed for the minter
+    /// @return True if the operation was successful
     function configureMinter(
-        address minter,
-        uint256 minterAllowedAmount
+        address _minter,
+        uint256 _minterAllowedAmount
     ) external whenNotPaused onlyMasterMinter returns (bool) {
-        minters[minter] = true;
-        minterAllowed[minter] = minterAllowedAmount;
-        emit MinterConfigured(minter, minterAllowedAmount);
+        minters[_minter] = true;
+        minterAllowed[_minter] = _minterAllowedAmount;
+        emit MinterConfigured(_minter, _minterAllowedAmount);
         return true;
     }
 
-    /**
-     * @dev Function to remove a minter
-     * @param minter The address of the minter to remove
-     * @return True if the operation was successful.
-     */
+    /// @notice Function to remove a minter
+    /// @param _minter The address of the minter to remove
+    /// @return True if the operation was successful
     function removeMinter(
-        address minter
+        address _minter
     ) external onlyMasterMinter returns (bool) {
-        minters[minter] = false;
-        minterAllowed[minter] = 0;
-        emit MinterRemoved(minter);
+        minters[_minter] = false;
+        minterAllowed[_minter] = 0;
+        emit MinterRemoved(_minter);
         return true;
     }
 
+    /// @notice Function update the master minter
+    /// @param _newMasterMinter The address of a new master minter
     function updateMasterMinter(address _newMasterMinter) external onlyOwner {
         require(
             _newMasterMinter != address(0),
@@ -269,23 +239,12 @@ contract IndexToken is
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Updates the balance of many accounts
-    /// @dev
-    /// @param _account Address to update
-    /// @param _newOwnership Updated balance
-    function _updateOwnership(
-        address _account,
-        uint256 _newOwnership
-    ) internal {
-        ownershipByAddress[_account] += _newOwnership;
-    }
-
     function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
+        address _from,
+        address _to,
+        uint256 _amount
     ) internal override whenNotPaused {
-        super._beforeTokenTransfer(from, to, amount);
+        super._beforeTokenTransfer(_from, _to, _amount);
     }
 
     function _authorizeUpgrade(

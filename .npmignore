@@ -12,9 +12,6 @@ coverage
 walletUtils.*
 coverage.json
 arguments.js
-src/utils/execution.ts
-src/utils/multisend.ts
-src/Create2Factory.ts
 typings/
 .husky/pre-commit
 .prettierignore
