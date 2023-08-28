@@ -24,11 +24,11 @@ import '@normalfinance/contracts/contracts/Vault.sol';
 
 ### IndexToken
 
-Interface of the ENS Registry.
+An ERC-20 token deployed on the Polygon PoS network representing ownership in a Normal Index Fund.
 
 ### Vault
 
-Implementation of the ENS Registry, the central contract used to look up resolvers and owners for domains.
+A multi-chain contract used to securely custody a Normal Index Funds assets and execute authorized withdrawals.
 
 ## Developer guide
 
