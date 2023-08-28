@@ -1,16 +1,8 @@
 import { formatBytes32String } from "ethers/lib/utils";
-import { ethers, run } from "hardhat";
+import { ethers } from "hardhat";
 
 async function main() {
-  const Vault = await ethers.getContractFactory("Vault");
-  const vault = await Vault.deploy();
-  await vault.deployed();
-  console.log("Vault deployed at: ", vault.address);
-
-  await run(`verify:verify`, {
-    address: vault.address,
-    constructorArguments: [],
-  });
+  const vault = await ethers.getContractAt("Vault", "0x0");
 
   await vault.initialize(
     50,

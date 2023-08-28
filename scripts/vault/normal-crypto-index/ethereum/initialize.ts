@@ -1,16 +1,8 @@
 import { formatBytes32String } from "ethers/lib/utils";
-import { ethers, run } from "hardhat";
+import { ethers } from "hardhat";
 
 async function main() {
-  const Vault = await ethers.getContractFactory("Vault");
-  const vault = await Vault.deploy();
-  await vault.deployed();
-  console.log("Vault deployed at: ", vault.address);
-
-  await run(`verify:verify`, {
-    address: vault.address,
-    constructorArguments: [],
-  });
+  const vault = await ethers.getContractAt("Vault", "0x0");
 
   await vault.initialize(
     50,
@@ -24,7 +16,7 @@ async function main() {
     ],
     [
       "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
-      "00x95ad61b0a150d79219dcf64e1e6cc01f0b64c4cex0",
+      "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce",
       "0x514910771af9ca656af840dff83e8264ecf986ca",
       "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
       "0x5a98fcbea516cf06857215779fd812ca3bef1b32",
