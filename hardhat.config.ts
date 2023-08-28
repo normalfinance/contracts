@@ -27,7 +27,7 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
 // Go to https://hardhat.org/config/ to learn more
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "hardhat", // ganache
+  defaultNetwork: "hardhat",
   solidity: {
     compilers: [
       {
@@ -40,21 +40,17 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      chainId: 31337,
       accounts: {
         accountsBalance: "10000000000000000000000000",
         //   mnemonic: MNEMONIC,
       },
-      allowUnlimitedContractSize: true,
-      chainId: 31337,
+      allowUnlimitedContractSize: false,
       blockGasLimit: 100000000000000,
-    },
-    localhost: {
-      allowUnlimitedContractSize: true,
     },
     ganache: {
       chainId: 1337,
       url: "http://localhost:8545",
-      allowUnlimitedContractSize: true,
       blockGasLimit: 100000000000000,
       accounts: {
         mnemonic:
@@ -64,150 +60,138 @@ const config: HardhatUserConfig = {
         count: 20,
       },
     },
+
+    // ETHEREUM
     eth_mainnet: {
-      url: process.env.ETH_MAINNET_URL || "",
       chainId: 1,
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
+      url: process.env.ETH_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    goerli: {
-      url: process.env.GOERLI_URL || "",
+    eth_goerli: {
       chainId: 5,
+      url: process.env.ETH_GOERLI_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
     },
-    sepolia: {
-      url: process.env.SEPOLIA_URL || "",
+    eth_sepolia: {
       chainId: 11155111,
+      url: process.env.ETH_SEPOLIA_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
     },
+
+    // POLYGON
     polygon_mainnet: {
-      url: process.env.POLYGON_URL || "",
       chainId: 137,
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
-      // : 200e9,
+      url: process.env.POLYGON_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
     polygon_mumbai: {
-      url: process.env.POLYGON_MUMBAI_URL || "",
       chainId: 80001,
+      url: process.env.POLYGON_MUMBAI_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
     },
-    bnb_mainnet: {
-      url: "https://bsc-dataseed2.binance.org",
+
+    // BINANCE SMART CHAIN (BSC)
+    bsc_mainnet: {
       chainId: 56,
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
+      url: process.env.BSC_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
     bnb_testnet: {
-      url:
-        process.env.BSC_TESTNET_URL ||
-        "https://wandering-broken-tree.bsc-testnet.quiknode.pro/7992da20f9e4f97c2a117bea9af37c1c266f63ec/",
       chainId: 97,
+      url: process.env.BSC_TESTNET_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
-      gasPrice: 50e9,
     },
-    avalancheMain: {
-      url: "https://api.avax.network/ext/bc/C/rpc",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
+
+    // AVALANCHE
+    avalanche_mainnet: {
       chainId: 43114,
+      url: process.env.AVALANCHE_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    avalancheTest: {
-      url: "https://api.avax-test.network/ext/bc/C/rpc",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
+    avalanche_fuji: {
       chainId: 43113,
-    },
-    arbitrumMain: {
-      url: "https://arb1.arbitrum.io/rpc",
+      url: process.env.AVALANCHE_FUJI_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
+    },
+
+    // ARBITRUM
+    arbitrum_mainnet: {
       chainId: 42161,
+      url: process.env.ARBITRUM_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    arbitrumGoerli: {
-      url: "https://goerli-rollup.arbitrum.io/rpc",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
+    arbitrum_goerli: {
       chainId: 421613,
-      // gasPrice: 2e9, //2 gwei
-    },
-    arbitrumTest: {
-      url: "https://rinkeby.arbitrum.io/rpc",
+      url: process.env.ARBITRUM_GOERLI_URL || "",
       accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
           : walletUtils.makeKeyList(),
-      chainId: 421611,
     },
-    arbitrumNova: {
-      url: "https://nova.arbitrum.io/rpc",
-      accounts:
-        process.env.PRIVATE_KEY !== undefined
-          ? [process.env.PRIVATE_KEY]
-          : walletUtils.makeKeyList(),
-      chainId: 42170,
-    },
-    optimismGoerli: {
-      url: `https://goerli.optimism.io`,
-      accounts: walletUtils.makeKeyList(),
-      chainId: 420,
-    },
-    optimismMainnet: {
-      url: `https://mainnet.optimism.io`,
-      accounts: walletUtils.makeKeyList(),
+
+    // OPTIMISM
+    optimism_mainnet: {
       chainId: 10,
+      url: process.env.OPTIMISM_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    hederaMainnet: {
-      url: `https://mainnet.hashio.io/api`,
-      accounts: walletUtils.makeKeyList(),
+    optimism_goerli: {
+      chainId: 420,
+      url: process.env.OPTIMISM_GOERLI_URL || "",
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : walletUtils.makeKeyList(),
+    },
+
+    // HEDERA
+    hedera_mainnet: {
       chainId: 295,
+      url: process.env.HEDERA_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    hederaTestnet: {
-      url: `https://testnet.hashio.io/api`,
-      accounts: walletUtils.makeKeyList(),
+    hedera_testnet: {
       chainId: 296,
+      url: process.env.HEDERA_TESTNET_URL || "",
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : walletUtils.makeKeyList(),
       blockGasLimit: 500000,
     },
-    filecoinMainnet: {
-      url: `https://rpc.ankr.com/filecoin`,
-      accounts: walletUtils.makeKeyList(),
+
+    // FILECOIN
+    filecoin_mainnet: {
       chainId: 314,
+      url: process.env.FILECOIN_MAINNET_URL || "",
+      accounts: [process.env.DEPLOYER_PRIVATE_KEY || ""],
     },
-    filecoinTestnet: {
-      // Calibration Testnet
-      url: `https://rpc.ankr.com/filecoin_testnet`,
-      accounts: walletUtils.makeKeyList(),
+    filecoin_calibration: {
       chainId: 314159,
+      url: process.env.FILECOIN_CALIBRATION_URL || "",
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : walletUtils.makeKeyList(),
     },
   },
   gasReporter: {
-    enabled: process.env.REPORT_GAS !== undefined,
+    enabled: true,
     currency: "USD",
     excludeContracts: ["test/"],
   },
@@ -222,7 +206,6 @@ const config: HardhatUserConfig = {
       avalancheFujiTestnet: process.env.AVALANCHE_API_KEY || "",
       avalanche: process.env.AVALANCHE_API_KEY || "",
       arbitrumGoerli: process.env.ARBITRUM_API_KEY || "",
-      arbitrumTestnet: process.env.ARBITRUM_API_KEY || "",
       arbitrumOne: process.env.ARBITRUM_API_KEY || "",
       optimisticGoerli: process.env.OPTIMISTIC_API_KEY || "",
       optimisticEthereum: process.env.OPTIMISTIC_API_KEY || "",
