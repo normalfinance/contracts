@@ -1,0 +1,116 @@
+{
+  "name": "@normalfinance/contracts",
+  "version": "0.1.0",
+  "description": "Normal Index contracts",
+  "main": "index.ts",
+  "files": [
+    "contracts/**/*.sol",
+    "artifacts"
+  ],
+  "scripts": {
+    "clean": "npx hardhat clean",
+    "build": "npm run clean && npx hardhat compile",
+    "test": "npx hardhat test",
+    "lint": "prettier --write 'contracts/**/*.sol'",
+    "prettier": "prettier --write '**/*.{json,sol,md,ts}'",
+    "postinstall": "husky install",
+    "prepack": "pinst --disable",
+    "postpack": "pinst --enable",
+    "coverage": "COVERAGE=1 DISABLE_VIA_IR=true hardhat coverage",
+    "prepublishOnly": "yarn build",
+    "pub": "yarn publish --access public",
+    "prepare": "husky install"
+  },
+  "keywords": [
+    "crypto",
+    "solidity",
+    "blockchain",
+    "defi"
+  ],
+  "contributors": [
+    "Normal Finance <joshua@normalfinance.io>"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.6",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
+    "@nomiclabs/hardhat-truffle5": "^2.0.6",
+    "@nomiclabs/hardhat-waffle": "^2.0.3",
+    "@nomiclabs/hardhat-web3": "^2.0.0",
+    "@typechain/ethers-v5": "^7.2.0",
+    "@typechain/hardhat": "^2.3.1",
+    "@types/chai": "^4.3.1",
+    "@types/chai-as-promised": "^7.1.5",
+    "@types/chai-string": "^1.4.2",
+    "@types/mocha": "^9.1.1",
+    "@types/node": "^12.20.54",
+    "@typescript-eslint/eslint-plugin": "^4.33.0",
+    "@typescript-eslint/parser": "^4.33.0",
+    "chai": "^4.3.6",
+    "chai-as-promised": "^7.1.1",
+    "chai-string": "^1.5.0",
+    "dotenv": "^16.0.1",
+    "eslint": "^7.32.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-config-standard": "^16.0.3",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-prettier": "^3.4.1",
+    "eslint-plugin-promise": "^5.2.0",
+    "ethereum-waffle": "^3.4.4",
+    "ethers": "^5.6.8",
+    "hardhat": "^2.9.7",
+    "hardhat-gas-reporter": "^1.0.8",
+    "hardhat-interface-generator": "^0.0.6",
+    "husky": "^8.0.3",
+    "pinst": "^3.0.0",
+    "prettier": "^2.6.2",
+    "prettier-plugin-solidity": "^1.1.2",
+    "solc": "^0.8.15",
+    "solhint": "^3.3.7",
+    "solidity-coverage": "^0.8.2",
+    "ts-node": "^10.8.1",
+    "typechain": "^5.2.0",
+    "typescript": "^4.7.3"
+  },
+  "dependencies": {
+    "@ethersproject/abstract-signer": "^5.6.2",
+    "@ethersproject/constants": "^5.6.1",
+    "@openzeppelin/contracts": "^4.9.2",
+    "@openzeppelin/contracts-upgradeable": "^4.9.2",
+    "@typechain/hardhat": "^2.3.0",
+    "@types/mocha": "^9.0.0",
+    "chai-as-promised": "^7.1.1",
+    "chai-string": "^1.5.0",
+    "eth-gas-reporter": "^0.2.24",
+    "ethereumjs-util": "^7.1.0",
+    "ethereumjs-wallet": "^1.0.1",
+    "ethers": "^5.6.8",
+    "ganache": "^7.1.0",
+    "ganache-cli": "^6.12.2",
+    "hardhat": "^2.9.5",
+    "hardhat-deploy": "^0.9.3",
+    "hardhat-deploy-ethers": "^0.3.0-beta.11",
+    "hardhat-gas-reporter": "^1.0.7",
+    "solc": "^0.8.15",
+    "solidity-bytes-utils": "^0.8.0",
+    "source-map-support": "^0.5.19",
+    "typescript": "^4.3.5"
+  },
+  "directories": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/normalfinance/contracts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/normalfinance/contracts/issues"
+  },
+  "homepage": "https://github.com/normalfinance/contracts#readme",
+  "husky": {
+    "hooks": {
+      "pre-commit": ""
+    }
+  }
+}
