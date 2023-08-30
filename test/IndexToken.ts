@@ -171,17 +171,17 @@ describe("Index Token tests", function () {
         bobAddress
       );
 
-      tx = await token.connect(newMinter).burnForWithdraw(
-        tokensToBurn,
-        {
-          owner: bobAddress,
-          symbol: mockTokenSymbol,
-          amount: tokensToBurn,
-          to: bobAddress,
-        },
-        ethSignedMessage,
-        signature
-      );
+      tx = await token
+        .connect(newMinter)
+        .burnForWithdraw(
+          tokensToBurn,
+          bobAddress,
+          mockToken.address,
+          tokensToBurn,
+          bobAddress,
+          ethSignedMessage,
+          signature
+        );
       await tx.wait();
 
       // tokens burned
@@ -206,17 +206,17 @@ describe("Index Token tests", function () {
         bobAddress
       );
 
-      tx = token.connect(bob).burnForWithdraw(
-        tokensToBurn,
-        {
-          owner: bobAddress,
-          symbol: mockTokenSymbol,
-          amount: tokensToBurn,
-          to: bobAddress,
-        },
-        ethSignedMessage,
-        signature
-      );
+      tx = token
+        .connect(bob)
+        .burnForWithdraw(
+          tokensToBurn,
+          bobAddress,
+          mockToken.address,
+          tokensToBurn,
+          bobAddress,
+          ethSignedMessage,
+          signature
+        );
       await expect(tx).to.be.reverted;
     });
 
@@ -234,12 +234,11 @@ describe("Index Token tests", function () {
 
       tx = token.connect(bob).burnForWithdraw(
         tokensToBurn,
-        {
-          owner: bobAddress,
-          symbol: mockTokenSymbol,
-          amount: tokensToBurn,
-          to: bobAddress,
-        },
+        bobAddress,
+        mockToken.address,
+        tokensToBurn,
+        bobAddress,
+
         ethSignedMessage,
         signature
       );
@@ -260,12 +259,11 @@ describe("Index Token tests", function () {
 
       tx = token.connect(bob).burnForWithdraw(
         tokensToBurn,
-        {
-          owner: bobAddress,
-          symbol: mockTokenSymbol,
-          amount: tokensToBurn,
-          to: bobAddress,
-        },
+        bobAddress,
+        mockToken.address,
+        tokensToBurn,
+        bobAddress,
+
         ethSignedMessage,
         signature
       );
@@ -287,12 +285,11 @@ describe("Index Token tests", function () {
 
       tx = token.connect(bob).burnForWithdraw(
         tokensToBurn,
-        {
-          owner: bobAddress,
-          symbol: mockTokenSymbol,
-          amount: tokensToBurn,
-          to: bobAddress,
-        },
+        bobAddress,
+        mockToken.address,
+        tokensToBurn,
+        bobAddress,
+
         ethSignedMessage,
         signature
       );
@@ -313,12 +310,11 @@ describe("Index Token tests", function () {
 
       tx = token.connect(bob).burnForWithdraw(
         _tokensToBurn,
-        {
-          owner: AddressZero,
-          symbol: mockTokenSymbol,
-          amount: _tokensToBurn,
-          to: bobAddress,
-        },
+        AddressZero,
+        mockToken.address,
+        _tokensToBurn,
+        bobAddress,
+
         _ethSignedMessage,
         _signature
       );

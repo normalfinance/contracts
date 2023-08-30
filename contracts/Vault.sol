@@ -2,15 +2,12 @@
 pragma solidity ^0.8.19;
 
 // Modules
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
-// Lib
-import "./lib/SharedStructs.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -25,10 +22,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // |__/  \__/ \______/ |__/      |__/ |__/ |__/ \_______/|__/
 
 error InvalidSignature();
-error UnevenArrays();
-error InvalidAnnualFee(uint256);
-error UnsupportedToken(bytes32 token);
-error InvalidAddress(address);
+error InvalidFee(uint256);
 
 /// @title Vault contract
 /// @author Joshua Blew <joshua@normalfinance.io>
@@ -44,25 +38,26 @@ contract Vault is
                                 State
     //////////////////////////////////////////////////////////////*/
 
-    uint256 constant TEN_THOUSAND = 10000;
-    uint256 constant ONE_YEAR = 31556952;
+    uint256 private immutable TEN_THOUSAND = 10000;
+    uint256 private immutable ONE_YEAR = 31556952;
 
-    uint256 private _annualFee;
-    mapping(bytes32 => uint256) private _lastFeeWithdrawalDates;
+    /// @notice The annual basis points collected on all deposits
+    uint256 private _fee;
 
-    mapping(bytes32 => address) private _whitelistedTokens;
-    mapping(bytes32 => uint256) private _tokenFeesToCollect;
+    /// @notice The timestamp when the _fee was last collected
+    uint private _lastFeeCollection;
 
-    mapping(bytes => bool) public seenWithdrawalSignatures;
+    /// @notice Prorated fees from withdrawals awaiting collection
+    mapping(address => uint256) private _feesByToken;
 
-    event Withdrawal(
-        address indexed from,
-        bytes32 symbol,
-        uint256 amount,
-        uint256 proratedFee
-    );
-    event FeeCollection(uint timestamp, uint256 totalFee);
-    event Whitelist(bytes32 symbol);
+    /// @notice Record of processed withdrawals to avoid duplicates
+    mapping(bytes => bool) private _seenWithdrawalSignatures;
+
+    event Withdrawal(address indexed owner, uint256 amount);
+    event TokenWithdrawal(address indexed owner, address token, uint256 amount);
+
+    event FeeCollection(uint timestamp, uint256 fee);
+    event TokenFeeCollection(uint timestamp, address token, uint256 fee);
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
@@ -72,99 +67,117 @@ contract Vault is
     receive() external payable virtual {}
 
     /// @notice Initializes the contract after deployment
-    /// @dev Replaces the constructor() to support upgradeability (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
-    /// @param _anAnnualFee The Basis Point fee applied to all deposits
-    /// @param _tokenSymbols List of supported tokens
-    /// @param _tokenAddresses List of supported token addresses
-    function initialize(
-        uint256 _anAnnualFee,
-        bytes32[] memory _tokenSymbols,
-        address[] memory _tokenAddresses
-    ) public initializer {
-        if (_anAnnualFee <= 0 || 5000 < _anAnnualFee)
-            revert InvalidAnnualFee(_anAnnualFee);
-        if (_tokenSymbols.length != _tokenAddresses.length)
-            revert UnevenArrays();
+    /// @dev Replaces the constructor() to support upgradeability
+    /// (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
+    /// @param _aFee The basis points fee applied to all deposits
+    function initialize(uint256 _aFee) public initializer {
+        if (_aFee <= 0 || 5000 < _aFee) revert InvalidFee(_aFee);
 
         __Pausable_init();
         __Ownable_init();
         __UUPSUpgradeable_init();
 
-        _annualFee = _anAnnualFee;
-
-        for (uint256 i = 0; i < _tokenSymbols.length; ++i) {
-            _whitelistedTokens[_tokenSymbols[i]] = _tokenAddresses[i];
-            _tokenFeesToCollect[_tokenSymbols[i]] = 0;
-            _lastFeeWithdrawalDates[_tokenSymbols[i]] = getOneMonthAgo();
-        }
+        _fee = _aFee;
+        _lastFeeCollection = block.timestamp;
     }
 
     /*///////////////////////////////////////////////////////////////
                             View functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the Vault fee
+    /// @notice Returns the fee
     function getFee() public view virtual returns (uint256) {
-        return _annualFee;
+        return _fee;
+    }
+
+    /// @notice Returns the prorated fee for a withdrawal
+    /// @dev Uses the time since _lastFeeCollection to calculate annualized fee
+    /// @param _amount Withdrawal amount
+    function getProratedFee(
+        uint256 _amount
+    ) internal view returns (uint256 proratedFee) {
+        uint256 timeDelta = block.timestamp - _lastFeeCollection;
+
+        proratedFee = (((_fee * _amount) * timeDelta) /
+            ONE_YEAR /
+            TEN_THOUSAND);
     }
 
     /// @notice Returns the timestamp when the last fee was collected
-    /// @param _symbol Desired token last fee withdrawal date
-    function getLastFeeWithdrawalDate(
-        bytes32 _symbol
-    ) public view virtual returns (uint) {
-        return _lastFeeWithdrawalDates[_symbol];
+    function getLastFeeCollection() public view virtual returns (uint) {
+        return _lastFeeCollection;
     }
 
-    /// @notice Returns the outstanding fees to collect for a token
-    /// @param _symbol Desired token fees to collect
+    /// @notice Returns the prorated withdrawal fees ready to collect
+    /// @param _token Token address
     function getTokenFeesToCollect(
-        bytes32 _symbol
-    ) public view virtual returns (uint) {
-        return _tokenFeesToCollect[_symbol];
+        address _token
+    ) public view virtual returns (uint256) {
+        return _feesByToken[_token];
     }
 
-    /// @notice Returns the token contract address
-    /// @param _symbol Desired token contract address
-    function getWhitelistedToken(
-        bytes32 _symbol
-    ) public view virtual returns (address) {
-        return _whitelistedTokens[_symbol];
+    /// @notice Returns true if withdrawl signature has been processed
+    /// @param _signature Signature to check
+    function checkWithdrawalSignature(
+        bytes calldata _signature
+    ) public view virtual returns (bool) {
+        return _seenWithdrawalSignatures[_signature];
     }
 
     /*///////////////////////////////////////////////////////////////
                             External functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Withdrawals tokens from the Vault
-    /// @param _withdrawal Withdrawal info
-    /// @param _hash Message hash of withdrawal
-    /// @param _signature Withdrawal owner signature of withdrawal
+    /// @notice Function to withdraw the native token (i.e. ETH)
+    /// @param _owner Address of investor
+    /// @param _amount Native token amount
+    /// @param _to Address of withdrawal destination
+    /// @param _hash Message hash of withdrawal args
+    /// @param _signature Owner signature of withdrawal args
     function withdraw(
-        SharedStructs.WithdrawRequest memory _withdrawal,
+        address _owner,
+        uint256 _amount,
+        address payable _to,
         bytes32 _hash,
         bytes memory _signature
     ) external onlyOwner nonReentrant {
-        if (
-            !SignatureChecker.isValidSignatureNow(
-                _withdrawal.owner,
-                _hash,
-                _signature
-            )
-        ) revert InvalidSignature();
+        if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
+            revert InvalidSignature();
 
         require(
-            !seenWithdrawalSignatures[_signature],
+            !_seenWithdrawalSignatures[_signature],
             "Vault: Withdrawal already processed"
         );
-        seenWithdrawalSignatures[_signature] = true;
+        _seenWithdrawalSignatures[_signature] = true;
 
-        _withdraw(_withdrawal);
+        _withdraw(_owner, _amount, _to);
     }
 
-    /*///////////////////////////////////////////////////////////////
-                        Owner functions
-    //////////////////////////////////////////////////////////////*/
+    /// @notice Function to withdraw non-native tokens (i.e. ERC20)
+    /// @param _owner Address of investor
+    /// @param _token Token address
+    /// @param _to Address of withdrawal destination
+    /// @param _hash Message hash of withdrawal args
+    /// @param _signature Owner signature of withdrawal args
+    function withdrawToken(
+        address _owner,
+        address _token,
+        uint256 _amount,
+        address payable _to,
+        bytes32 _hash,
+        bytes memory _signature
+    ) external onlyOwner nonReentrant {
+        if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
+            revert InvalidSignature();
+
+        require(
+            !_seenWithdrawalSignatures[_signature],
+            "Vault: Withdrawal already processed"
+        );
+        _seenWithdrawalSignatures[_signature] = true;
+
+        _withdrawToken(_owner, _token, _amount, _to);
+    }
 
     /// @notice Pauses `whenNotPaused` functions for emergencies
     function pause() public onlyOwner {
@@ -176,66 +189,46 @@ contract Vault is
         _unpause();
     }
 
-    /// @notice Adds support for a new token
-    /// @param _symbol The token symbol
-    /// @param _tokenAddress The contract address of the token
-    function whitelistToken(
-        bytes32 _symbol,
-        address _tokenAddress
-    ) external onlyOwner {
-        if (_tokenAddress == address(0)) revert InvalidAddress(_tokenAddress);
-
-        _whitelistedTokens[_symbol] = _tokenAddress;
-        _tokenFeesToCollect[_symbol] = 0;
-        _lastFeeWithdrawalDates[_symbol] = getOneMonthAgo();
-
-        emit Whitelist(_symbol);
+    /// @notice Function to update the fee
+    /// @param _newFee Updated fee
+    function adjustFee(uint256 _newFee) external onlyOwner {
+        if (_newFee <= 0 || 5000 < _newFee) revert InvalidFee(_newFee);
+        _fee = _newFee;
     }
 
-    /// @notice Updates the annual fee
-    /// @param _newAnnualFee Updated annual basis points fee
-    function adjustFee(uint256 _newAnnualFee) external onlyOwner {
-        if (_newAnnualFee <= 0 || 5000 < _newAnnualFee)
-            revert InvalidAnnualFee(_newAnnualFee);
-        _annualFee = _newAnnualFee;
+    /// @notice Function to collect native token fees
+    /// @param _to Address to send fees to
+    function collectFees(address payable _to) external onlyOwner nonReentrant {
+        uint256 fee = getProratedFee(address(this).balance);
+
+        _feesByToken[address(0)] = 0;
+        _lastFeeCollection = block.timestamp;
+
+        uint256 totalFee = fee + _feesByToken[address(0)];
+
+        _to.transfer(totalFee);
+        emit FeeCollection(block.timestamp, totalFee);
     }
 
-    /// @notice Withdraws Vault fee
-    /// @param _symbols List of token symbols to withdraw fees for
-    /// @return totalFee
-    function withdrawFee(
-        bytes32[] calldata _symbols
-    ) external onlyOwner nonReentrant returns (uint256 totalFee) {
-        uint _now = block.timestamp;
+    /// @notice Function to collect non-native token fees
+    /// @param _to Address to send fees to
+    /// @param _tokens Token addresses to collect fees for
+    function collectTokenFees(
+        address payable _to,
+        address[] memory _tokens
+    ) external onlyOwner nonReentrant {
+        for (uint256 i = 0; i < _tokens.length; ++i) {
+            uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
-        for (uint256 i = 0; i < _symbols.length; ++i) {
-            if (_whitelistedTokens[_symbols[i]] != address(0)) {
-                uint256 vaultBalance = IERC20(_whitelistedTokens[_symbols[i]])
-                    .balanceOf(address(this));
+            uint256 fee = getProratedFee(tokenBalance);
 
-                if (vaultBalance > 0) {
-                    uint256 timeDelta = block.timestamp -
-                        _lastFeeWithdrawalDates[_symbols[i]];
+            _feesByToken[_tokens[i]] = 0;
+            _lastFeeCollection = block.timestamp;
 
-                    uint256 tokenFee = (((_annualFee * vaultBalance) *
-                        timeDelta) /
-                        ONE_YEAR /
-                        TEN_THOUSAND);
+            uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
-                    IERC20(_whitelistedTokens[_symbols[i]]).transfer(
-                        owner(),
-                        tokenFee + _tokenFeesToCollect[_symbols[i]]
-                    );
-
-                    emit FeeCollection(_now, totalFee);
-
-                    totalFee += tokenFee;
-
-                    _tokenFeesToCollect[_symbols[i]] = 0;
-
-                    _lastFeeWithdrawalDates[_symbols[i]] = _now;
-                }
-            }
+            IERC20(_tokens[i]).transfer(_to, totalFee);
+            emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
         }
     }
 
@@ -243,42 +236,37 @@ contract Vault is
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Withdraws tokens stored in the Vault
-    /// @param _withdrawal Withdrawal request
     function _withdraw(
-        SharedStructs.WithdrawRequest memory _withdrawal
+        address _owner,
+        uint256 _amount,
+        address payable _to
     ) internal {
-        if (_whitelistedTokens[_withdrawal.symbol] == address(0))
-            revert UnsupportedToken(_withdrawal.symbol);
-
         // Calculate prorated fee
-        uint256 timeDelta = block.timestamp -
-            _lastFeeWithdrawalDates[_withdrawal.symbol];
-        uint256 proratedFee = (((_annualFee * _withdrawal.amount) * timeDelta) /
-            ONE_YEAR /
-            TEN_THOUSAND);
-
-        uint256 totalFee = proratedFee;
+        uint256 fee = getProratedFee(_amount);
 
         // Record fee for delayed collection
-        _tokenFeesToCollect[_withdrawal.symbol] += totalFee;
+        _feesByToken[address(0)] += fee;
 
         // Send token to destination
-        IERC20(_whitelistedTokens[_withdrawal.symbol]).transfer(
-            _withdrawal.to,
-            _withdrawal.amount - totalFee
-        );
-        emit Withdrawal(
-            _withdrawal.owner,
-            _withdrawal.symbol,
-            _withdrawal.amount,
-            proratedFee
-        );
+        _to.transfer(_amount - fee);
+        emit Withdrawal(_owner, _amount);
     }
 
-    /// @notice Returns timestamp of one month ago in seconds
-    function getOneMonthAgo() internal view virtual returns (uint) {
-        return block.timestamp - (60 * 60 * 24 * 30);
+    function _withdrawToken(
+        address _owner,
+        address _token,
+        uint256 _amount,
+        address payable _to
+    ) internal {
+        // Calculate prorated fee
+        uint256 fee = getProratedFee(_amount);
+
+        // Record fee for delayed collection
+        _feesByToken[_token] += fee;
+
+        // Send token to destination
+        IERC20(_token).transfer(_to, _amount - fee);
+        emit TokenWithdrawal(_owner, _token, _amount);
     }
 
     function _authorizeUpgrade(
