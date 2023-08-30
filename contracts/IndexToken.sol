@@ -2,18 +2,15 @@
 pragma solidity ^0.8.19;
 
 // Modules
-import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
-// Lib
-import "./lib/SharedStructs.sol";
+import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -167,22 +164,24 @@ contract IndexToken is
 
     /// @notice Function to burn tokens
     /// @dev Burns tokens then updates account ownership
-    /// @param _amount Number of tokens to burn
-    /// @param _withdrawal Withdrawal info
-    /// @param _hash Message hash of withdrawal
-    /// @param _signature Withdrawal owner signature of withdrawal
+    /// @param _burnAmount Number of tokens to burn
+    /// @param _owner Address of investor
+    /// @param _token Token address
+    /// @param _amount Token amount
+    /// @param _to Address of withdrawal destination
+    /// @param _hash Message hash of withdrawal args
+    /// @param _signature Owner signature of withdrawal args
     function burnForWithdraw(
+        uint256 _burnAmount,
+        address _owner,
+        address _token,
         uint256 _amount,
-        SharedStructs.WithdrawRequest memory _withdrawal,
+        address payable _to,
         bytes32 _hash,
         bytes memory _signature
     ) external whenNotPaused onlyMinters {
         require(
-            SignatureChecker.isValidSignatureNow(
-                _withdrawal.owner,
-                _hash,
-                _signature
-            ),
+            SignatureChecker.isValidSignatureNow(_owner, _hash, _signature),
             "IndexToken: invalid withdrawal signature"
         );
 
@@ -192,10 +191,10 @@ contract IndexToken is
         );
         seenWithdrawalSignatures[_signature] = true;
 
-        _burn(_withdrawal.owner, _amount);
+        _burn(_owner, _burnAmount);
 
-        uint256 ownership = ownershipByAddress[_withdrawal.owner];
-        ownershipByAddress[_withdrawal.owner] = ownership.sub(_amount);
+        uint256 ownership = ownershipByAddress[_owner];
+        ownershipByAddress[_owner] = ownership.sub(_burnAmount);
     }
 
     /// @notice Function to add/update a new minter
