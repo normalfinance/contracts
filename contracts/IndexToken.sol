@@ -49,14 +49,6 @@ contract IndexToken is
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
     event MasterMinterChanged(address indexed newMasterMinter);
-    event BurnForWithdrawal(
-        address indexed from,
-        address indexed to,
-        uint256 value,
-        uint16 chain,
-        address token,
-        address destination
-    );
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
