@@ -44,13 +44,19 @@ contract IndexToken is
     mapping(address => bool) internal minters;
     mapping(address => uint256) internal minterAllowed;
 
-    mapping(address => uint256) internal ownershipByAddress;
-
     mapping(bytes => bool) public seenWithdrawalSignatures;
 
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
     event MasterMinterChanged(address indexed newMasterMinter);
+    event BurnForWithdrawal(
+        address indexed from,
+        address indexed to,
+        uint256 value,
+        uint16 chain,
+        address token,
+        address destination
+    );
 
     /*///////////////////////////////////////////////////////////////
                     Constructor, Initializer, Modifiers
@@ -112,14 +118,6 @@ contract IndexToken is
         return minters[_account];
     }
 
-    /// @notice Get account index token ownership
-    /// @param _account The address of the account
-    function getOwnership(
-        address _account
-    ) public view virtual returns (uint256) {
-        return ownershipByAddress[_account];
-    }
-
     /*///////////////////////////////////////////////////////////////
                             External functions
     //////////////////////////////////////////////////////////////*/
@@ -135,7 +133,7 @@ contract IndexToken is
     }
 
     /// @notice Function to mint tokens
-    /// @dev Mint tokens then update the ownership and mint allowance
+    /// @dev Mint tokens then update minter allowance
     /// @param _to The address that will receive the minted tokens
     /// @param _amount The amount of tokens to mint. Must be less than or equal to the minterAllowance of the caller.
     /// @return A boolean that indicates if the operation was successful
@@ -143,9 +141,6 @@ contract IndexToken is
         address _to,
         uint256 _amount
     ) external whenNotPaused onlyMinters returns (bool) {
-        require(_to != address(0), "IndexToken: mint to the zero address");
-        require(_amount > 0, "IndexToken: mint amount not greater than 0");
-
         uint256 mintingAllowedAmount = minterAllowed[msg.sender];
         require(
             _amount <= mintingAllowedAmount,
@@ -154,47 +149,25 @@ contract IndexToken is
 
         _mint(_to, _amount);
 
-        uint256 ownership = ownershipByAddress[_to];
-        ownershipByAddress[_to] = ownership.add(_amount);
-
         minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
 
         return true;
     }
 
     /// @notice Function to burn tokens
-    /// @dev Burns tokens then updates account ownership
-    /// @param _burnAmount Number of tokens to burn
-    /// @param _owner Address of investor
-    /// @param _token Token address
-    /// @param _amount Token amount
-    /// @param _to Address of withdrawal destination
-    /// @param _hash Message hash of withdrawal args
-    /// @param _signature Owner signature of withdrawal args
-    function burnForWithdraw(
-        uint256 _burnAmount,
-        address _owner,
-        address _token,
+    /// @dev Burn tokens and accepts withdrawal args as unnamed params
+    /// @dev for passage to Vault withdraw execution via
+    /// @dev Ethers interface.parseTransaction()
+    /// @param _amount Number of tokens to burn
+    function burnForWithdrawal(
         uint256 _amount,
-        address payable _to,
-        bytes32 _hash,
-        bytes memory _signature
+        uint16, // Chain of withdrawal token
+        address, // Address of withdrawal token (address(0) for native)
+        address payable, // Address of withdrawal destination,
+        bytes32, // Hash
+        bytes memory // Signature
     ) external whenNotPaused onlyMinters {
-        require(
-            SignatureChecker.isValidSignatureNow(_owner, _hash, _signature),
-            "IndexToken: invalid withdrawal signature"
-        );
-
-        require(
-            !seenWithdrawalSignatures[_signature],
-            "IndexToken: Withdrawal already processed"
-        );
-        seenWithdrawalSignatures[_signature] = true;
-
-        _burn(_owner, _burnAmount);
-
-        uint256 ownership = ownershipByAddress[_owner];
-        ownershipByAddress[_owner] = ownership.sub(_burnAmount);
+        burn(_amount);
     }
 
     /// @notice Function to add/update a new minter
