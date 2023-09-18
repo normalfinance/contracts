@@ -164,8 +164,8 @@ contract IndexToken is
         uint16, // Chain of withdrawal token
         address, // Address of withdrawal token (address(0) for native)
         address payable, // Address of withdrawal destination,
-        bytes32, // Hash
-        bytes memory // Signature
+        bytes32, // Message hash of withdrawal args with format: YYYY-MM-DD:fundId:assetSymbol:usdValue:destination (i.e. 2023-09-18:NCI:ETH:100:0x9a9C45349227f8c7Cbe52680eCa15597db135858)
+        bytes memory // Owner signature of message hash^ used to authorize Vault withdrawal
     ) external whenNotPaused onlyMinters {
         burn(_amount);
     }

@@ -132,8 +132,8 @@ contract Vault is
     /// @param _owner Address of investor
     /// @param _amount Native token amount
     /// @param _to Address of withdrawal destination
-    /// @param _hash Message hash of withdrawal args
-    /// @param _signature Owner signature of withdrawal args
+    /// @param _hash Message hash of withdrawal args with format: YYYY-MM-DD:fundId:assetSymbol:usdValue:destination (i.e. 2023-09-18:NCI:ETH:100:0x9a9C45349227f8c7Cbe52680eCa15597db135858)
+    /// @param _signature Owner signature of message hash^ used to authorize Vault withdrawal
     function withdraw(
         address _owner,
         uint256 _amount,
@@ -157,8 +157,8 @@ contract Vault is
     /// @param _owner Address of investor
     /// @param _token Token address
     /// @param _to Address of withdrawal destination
-    /// @param _hash Message hash of withdrawal args
-    /// @param _signature Owner signature of withdrawal args
+    /// @param _hash Message hash of withdrawal args with format: YYYY-MM-DD:fundId:assetSymbol:usdValue:destination (i.e. 2023-09-18:NCI:ETH:100:0x9a9C45349227f8c7Cbe52680eCa15597db135858)
+    /// @param _signature Owner signature of message hash^ used to authorize Vault withdrawal
     function withdrawToken(
         address _owner,
         address _token,
