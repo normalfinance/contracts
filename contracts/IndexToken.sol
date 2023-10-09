@@ -41,8 +41,8 @@ contract IndexToken is
 
     address public masterMinter;
 
-    mapping(address => bool) internal minters;
-    mapping(address => uint256) internal minterAllowed;
+    mapping(address => bool) internal _minters;
+    mapping(address => uint256) internal _minterAllowed;
 
     mapping(bytes => bool) public seenWithdrawalSignatures;
 
@@ -81,7 +81,7 @@ contract IndexToken is
 
     /// @notice Throws if called by any account other than a minter
     modifier onlyMinters() {
-        require(minters[msg.sender], "IndexToken: caller is not a minter");
+        require(_minters[msg.sender], "IndexToken: caller is not a minter");
         _;
     }
 
@@ -101,13 +101,13 @@ contract IndexToken is
     /// @notice Get minter allowance for an account
     /// @param _minter The address of the minter
     function minterAllowance(address _minter) external view returns (uint256) {
-        return minterAllowed[_minter];
+        return _minterAllowed[_minter];
     }
 
     /// @notice Checks if account is a minter
     /// @param _account The address to check
     function isMinter(address _account) external view returns (bool) {
-        return minters[_account];
+        return _minters[_account];
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -133,7 +133,7 @@ contract IndexToken is
         address _to,
         uint256 _amount
     ) external whenNotPaused onlyMinters returns (bool) {
-        uint256 mintingAllowedAmount = minterAllowed[msg.sender];
+        uint256 mintingAllowedAmount = _minterAllowed[msg.sender];
         require(
             _amount <= mintingAllowedAmount,
             "IndexToken: mint amount exceeds minterAllowance"
@@ -141,7 +141,7 @@ contract IndexToken is
 
         _mint(_to, _amount);
 
-        minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
+        _minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
 
         return true;
     }
@@ -170,8 +170,8 @@ contract IndexToken is
         address _minter,
         uint256 _minterAllowedAmount
     ) external whenNotPaused onlyMasterMinter returns (bool) {
-        minters[_minter] = true;
-        minterAllowed[_minter] = _minterAllowedAmount;
+        _minters[_minter] = true;
+        _minterAllowed[_minter] = _minterAllowedAmount;
         emit MinterConfigured(_minter, _minterAllowedAmount);
         return true;
     }
@@ -182,8 +182,8 @@ contract IndexToken is
     function removeMinter(
         address _minter
     ) external onlyMasterMinter returns (bool) {
-        minters[_minter] = false;
-        minterAllowed[_minter] = 0;
+        _minters[_minter] = false;
+        _minterAllowed[_minter] = 0;
         emit MinterRemoved(_minter);
         return true;
     }
