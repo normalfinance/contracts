@@ -166,27 +166,21 @@ contract IndexToken is
     /// @notice Function to add/update a new minter
     /// @param _minter The address of the minter
     /// @param _minterAllowedAmount The minting amount allowed for the minter
-    /// @return True if the operation was successful
     function configureMinter(
         address _minter,
         uint256 _minterAllowedAmount
-    ) external whenNotPaused onlyMasterMinter returns (bool) {
+    ) external whenNotPaused onlyMasterMinter {
         _minters[_minter] = true;
         _minterAllowed[_minter] = _minterAllowedAmount;
         emit MinterConfigured(_minter, _minterAllowedAmount);
-        return true;
     }
 
     /// @notice Function to remove a minter
     /// @param _minter The address of the minter to remove
-    /// @return True if the operation was successful
-    function removeMinter(
-        address _minter
-    ) external onlyMasterMinter returns (bool) {
+    function removeMinter(address _minter) external onlyMasterMinter {
         _minters[_minter] = false;
         _minterAllowed[_minter] = 0;
         emit MinterRemoved(_minter);
-        return true;
     }
 
     /// @notice Function update the master minter
