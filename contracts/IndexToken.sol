@@ -40,8 +40,6 @@ contract IndexToken is
     mapping(address => bool) internal _minters;
     mapping(address => uint256) internal _minterAllowed;
 
-    mapping(bytes => bool) public seenWithdrawalSignatures;
-
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
     event MasterMinterChanged(address indexed newMasterMinter);
