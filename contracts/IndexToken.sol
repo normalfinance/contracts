@@ -9,7 +9,6 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -32,8 +31,6 @@ contract IndexToken is
     ERC20PermitUpgradeable,
     UUPSUpgradeable
 {
-    using SafeMath for uint256;
-
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
@@ -141,7 +138,7 @@ contract IndexToken is
         _mint(_to, _amount);
 
         unchecked {
-            _minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
+            _minterAllowed[msg.sender] = mintingAllowedAmount - _amount;
         }
 
         return true;
