@@ -141,7 +141,9 @@ contract IndexToken is
 
         _mint(_to, _amount);
 
-        _minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
+        unchecked {
+            _minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
+        }
 
         return true;
     }
