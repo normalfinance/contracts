@@ -38,9 +38,6 @@ contract Vault is
                                 State
     //////////////////////////////////////////////////////////////*/
 
-    uint256 private immutable TEN_THOUSAND = 10000;
-    uint256 private immutable ONE_YEAR = 31556952;
-
     /// @notice The annual basis points collected on all deposits
     uint256 private _fee;
 
@@ -99,8 +96,8 @@ contract Vault is
         uint256 timeDelta = block.timestamp - _lastFeeCollection;
 
         proratedFee = (((_fee * _amount) * timeDelta) /
-            ONE_YEAR /
-            TEN_THOUSAND);
+            31_556_952 /
+            10_000);
     }
 
     /// @notice Returns the timestamp when the last fee was collected
