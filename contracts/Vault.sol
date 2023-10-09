@@ -139,7 +139,7 @@ contract Vault is
         uint256 _amount,
         address payable _to,
         bytes32 _hash,
-        bytes memory _signature
+        bytes calldata _signature
     ) external onlyOwner nonReentrant {
         if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
             revert InvalidSignature();
