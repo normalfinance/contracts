@@ -70,15 +70,18 @@ contract Vault is
     /// @dev Replaces the constructor() to support upgradeability
     /// (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
     /// @param _aFee The basis points fee applied to all deposits
-    function initialize(uint256 _aFee) public initializer {
-        if (_aFee > FEE_LIMIT) revert InvalidFee(_aFee);
-
+    function initialize(uint256 _aFee) public initializer isValidFee(_aFee) {
         __Pausable_init();
         __Ownable_init();
         __UUPSUpgradeable_init();
 
         _fee = _aFee;
         _lastFeeCollection = block.timestamp;
+    }
+
+    modifier isValidFee(uint256 aFee) {
+        if (aFee > FEE_LIMIT) revert InvalidFee(aFee);
+        _;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -189,8 +192,7 @@ contract Vault is
 
     /// @notice Function to update the fee
     /// @param _newFee Updated fee
-    function adjustFee(uint256 _newFee) external onlyOwner {
-        if (_newFee > FEE_LIMIT) revert InvalidFee(_newFee);
+    function adjustFee(uint256 _newFee) external onlyOwner isValidFee(_newFee) {
         _fee = _newFee;
     }
 
