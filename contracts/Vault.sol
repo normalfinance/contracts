@@ -98,7 +98,7 @@ contract Vault is
     ) internal view returns (uint256 proratedFee) {
         uint256 timeDelta = block.timestamp - _lastFeeCollection;
 
-        proratedFee = (((_fee * _amount) * timeDelta) / 31_556_952 / 10_000);
+        proratedFee = _fee * _amount * timeDelta / 31_556_952 / 10_000;
     }
 
     /// @notice Returns the timestamp when the last fee was collected
