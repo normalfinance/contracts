@@ -50,6 +50,9 @@ contract Vault is
     /// @notice Record of processed withdrawals to avoid duplicates
     mapping(bytes => bool) private _seenWithdrawalSignatures;
 
+    /// @notice The maximum the fee can be set
+    uint256 private immutable FEE_LIMIT = 5_000;
+
     event Withdrawal(address indexed owner, uint256 amount);
     event TokenWithdrawal(address indexed owner, address token, uint256 amount);
 
@@ -68,7 +71,7 @@ contract Vault is
     /// (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
     /// @param _aFee The basis points fee applied to all deposits
     function initialize(uint256 _aFee) public initializer {
-        if (_aFee <= 0 || 5000 < _aFee) revert InvalidFee(_aFee);
+        if (_aFee > FEE_LIMIT) revert InvalidFee(_aFee);
 
         __Pausable_init();
         __Ownable_init();
@@ -95,9 +98,7 @@ contract Vault is
     ) internal view returns (uint256 proratedFee) {
         uint256 timeDelta = block.timestamp - _lastFeeCollection;
 
-        proratedFee = (((_fee * _amount) * timeDelta) /
-            31_556_952 /
-            10_000);
+        proratedFee = (((_fee * _amount) * timeDelta) / 31_556_952 / 10_000);
     }
 
     /// @notice Returns the timestamp when the last fee was collected
@@ -189,7 +190,7 @@ contract Vault is
     /// @notice Function to update the fee
     /// @param _newFee Updated fee
     function adjustFee(uint256 _newFee) external onlyOwner {
-        if (_newFee <= 0 || 5000 < _newFee) revert InvalidFee(_newFee);
+        if (_newFee > FEE_LIMIT) revert InvalidFee(_newFee);
         _fee = _newFee;
     }
 
