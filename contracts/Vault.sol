@@ -215,7 +215,7 @@ contract Vault is
         address payable _to,
         address[] memory _tokens
     ) external onlyOwner nonReentrant {
-        for (uint256 i = 0; i < _tokens.length; ++i) {
+        for (uint256 i = 0; i < _tokens.length; ) {
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
             uint256 fee = getProratedFee(tokenBalance);
@@ -227,6 +227,10 @@ contract Vault is
 
             IERC20(_tokens[i]).transfer(_to, totalFee);
             emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
+
+            unchecked {
+                i += 1;
+            }
         }
     }
 
