@@ -271,7 +271,5 @@ contract Vault is
         emit TokenWithdrawal(_owner, _token, _amount);
     }
 
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 }
