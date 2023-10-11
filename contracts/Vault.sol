@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -198,7 +199,7 @@ contract Vault is
 
     /// @notice Function to collect native token fees
     /// @param _to Address to send fees to
-    function collectFees(address payable _to) external onlyOwner nonReentrant {
+    function collectFees(address payable _to) external onlyOwner {
         uint256 fee = getProratedFee(address(this).balance);
 
         _feesByToken[address(0)] = 0;
@@ -206,7 +207,7 @@ contract Vault is
 
         uint256 totalFee = fee + _feesByToken[address(0)];
 
-        _to.transfer(totalFee);
+        Address.sendValue(_to, totalFee);
         emit FeeCollection(block.timestamp, totalFee);
     }
 
