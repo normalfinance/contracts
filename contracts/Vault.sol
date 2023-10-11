@@ -278,7 +278,7 @@ contract Vault is
         _feesByToken[_token] += fee;
 
         // Send token to destination
-        IERC20(_token).transfer(_to, _amount - fee);
+        SafeERC20.safeTransfer(IERC20(_token), _to, _amount - fee);
         emit TokenWithdrawal(_owner, _token, _amount);
     }
 
