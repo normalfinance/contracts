@@ -41,8 +41,11 @@ contract Vault is
     /// @notice The annual basis points collected on all deposits
     uint256 private _fee;
 
-    /// @notice The timestamp when the _fee was last collected
-    uint private _lastFeeCollection;
+    /// @notice The timestamp when the contract was initialized
+    uint private _initializedAt;
+
+    /// @notice The timestamp when the _fee was last collected for each token
+    mapping(address => uint) private _lastFeeCollectionByToken;
 
     /// @notice Prorated fees from withdrawals awaiting collection
     mapping(address => uint256) private _feesByToken;
@@ -76,7 +79,7 @@ contract Vault is
         __UUPSUpgradeable_init();
 
         _fee = _aFee;
-        _lastFeeCollection = block.timestamp;
+        _initializedAt = block.timestamp;
     }
 
     modifier isValidFee(uint256 aFee) {
@@ -97,16 +100,24 @@ contract Vault is
     /// @dev Uses the time since _lastFeeCollection to calculate annualized fee
     /// @param _amount Withdrawal amount
     function getProratedFee(
+        address _token,
         uint256 _amount
     ) internal view returns (uint256 proratedFee) {
-        uint256 timeDelta = block.timestamp - _lastFeeCollection;
+        uint256 timeDelta = block.timestamp -
+            (
+                _lastFeeCollectionByToken[_token] == 0
+                    ? _initializedAt
+                    : _lastFeeCollectionByToken[_token]
+            );
 
         proratedFee = (_fee * _amount * timeDelta) / 31_556_952 / 10_000;
     }
 
-    /// @notice Returns the timestamp when the last fee was collected
-    function getLastFeeCollection() public view virtual returns (uint) {
-        return _lastFeeCollection;
+    /// @notice Returns the timestamp when the last fee was collected for the token
+    function getLastFeeCollectionByToken(
+        address _token
+    ) public view virtual returns (uint) {
+        return _lastFeeCollectionByToken[_token];
     }
 
     /// @notice Returns the prorated withdrawal fees ready to collect
@@ -199,11 +210,11 @@ contract Vault is
     /// @notice Function to collect native token fees
     /// @param _to Address to send fees to
     function collectFees(address payable _to) external onlyOwner {
-        uint256 fee = getProratedFee(address(this).balance);
+        uint256 fee = getProratedFee(address(0), address(this).balance);
         uint256 totalFee = fee + _feesByToken[address(0)];
 
         _feesByToken[address(0)] = 0;
-        _lastFeeCollection = block.timestamp;
+        _lastFeeCollectionByToken[address(0)] = block.timestamp;
 
         Address.sendValue(_to, totalFee);
         emit FeeCollection(block.timestamp, totalFee);
@@ -219,11 +230,11 @@ contract Vault is
         for (uint256 i = 0; i < _tokens.length; ) {
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
-            uint256 fee = getProratedFee(tokenBalance);
+            uint256 fee = getProratedFee(_tokens[i], tokenBalance);
             uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
             _feesByToken[_tokens[i]] = 0;
-            _lastFeeCollection = block.timestamp;
+            _lastFeeCollectionByToken[_tokens[i]] = block.timestamp;
 
             SafeERC20.safeTransfer(IERC20(_tokens[i]), _to, totalFee);
             emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
@@ -244,7 +255,7 @@ contract Vault is
         address payable _to
     ) internal {
         // Calculate prorated fee
-        uint256 fee = getProratedFee(_amount);
+        uint256 fee = getProratedFee(address(0), _amount);
 
         // Record fee for delayed collection
         _feesByToken[address(0)] += fee;
@@ -261,7 +272,7 @@ contract Vault is
         address payable _to
     ) internal {
         // Calculate prorated fee
-        uint256 fee = getProratedFee(_amount);
+        uint256 fee = getProratedFee(_token, _amount);
 
         // Record fee for delayed collection
         _feesByToken[_token] += fee;
