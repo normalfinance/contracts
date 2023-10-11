@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 // Modules
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -31,27 +32,29 @@ contract Vault is
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
-    UUPSUpgradeable,
-    ReentrancyGuard
+    UUPSUpgradeable
 {
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
 
-    uint256 private immutable TEN_THOUSAND = 10000;
-    uint256 private immutable ONE_YEAR = 31556952;
-
     /// @notice The annual basis points collected on all deposits
     uint256 private _fee;
 
-    /// @notice The timestamp when the _fee was last collected
-    uint private _lastFeeCollection;
+    /// @notice The timestamp when the contract was initialized
+    uint private _initializedAt;
+
+    /// @notice The timestamp when the _fee was last collected for each token
+    mapping(address => uint) private _lastFeeCollectionByToken;
 
     /// @notice Prorated fees from withdrawals awaiting collection
     mapping(address => uint256) private _feesByToken;
 
     /// @notice Record of processed withdrawals to avoid duplicates
     mapping(bytes => bool) private _seenWithdrawalSignatures;
+
+    /// @notice The maximum the fee can be set
+    uint256 private immutable FEE_LIMIT = 5_000;
 
     event Withdrawal(address indexed owner, uint256 amount);
     event TokenWithdrawal(address indexed owner, address token, uint256 amount);
@@ -70,15 +73,18 @@ contract Vault is
     /// @dev Replaces the constructor() to support upgradeability
     /// (https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
     /// @param _aFee The basis points fee applied to all deposits
-    function initialize(uint256 _aFee) public initializer {
-        if (_aFee <= 0 || 5000 < _aFee) revert InvalidFee(_aFee);
-
+    function initialize(uint256 _aFee) public initializer isValidFee(_aFee) {
         __Pausable_init();
         __Ownable_init();
         __UUPSUpgradeable_init();
 
         _fee = _aFee;
-        _lastFeeCollection = block.timestamp;
+        _initializedAt = block.timestamp;
+    }
+
+    modifier isValidFee(uint256 aFee) {
+        if (aFee > FEE_LIMIT) revert InvalidFee(aFee);
+        _;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -94,18 +100,24 @@ contract Vault is
     /// @dev Uses the time since _lastFeeCollection to calculate annualized fee
     /// @param _amount Withdrawal amount
     function getProratedFee(
+        address _token,
         uint256 _amount
     ) internal view returns (uint256 proratedFee) {
-        uint256 timeDelta = block.timestamp - _lastFeeCollection;
+        uint256 timeDelta = block.timestamp -
+            (
+                _lastFeeCollectionByToken[_token] == 0
+                    ? _initializedAt
+                    : _lastFeeCollectionByToken[_token]
+            );
 
-        proratedFee = (((_fee * _amount) * timeDelta) /
-            ONE_YEAR /
-            TEN_THOUSAND);
+        proratedFee = (_fee * _amount * timeDelta) / 31_556_952 / 10_000;
     }
 
-    /// @notice Returns the timestamp when the last fee was collected
-    function getLastFeeCollection() public view virtual returns (uint) {
-        return _lastFeeCollection;
+    /// @notice Returns the timestamp when the last fee was collected for the token
+    function getLastFeeCollectionByToken(
+        address _token
+    ) public view virtual returns (uint) {
+        return _lastFeeCollectionByToken[_token];
     }
 
     /// @notice Returns the prorated withdrawal fees ready to collect
@@ -139,8 +151,8 @@ contract Vault is
         uint256 _amount,
         address payable _to,
         bytes32 _hash,
-        bytes memory _signature
-    ) external onlyOwner nonReentrant {
+        bytes calldata _signature
+    ) external onlyOwner {
         if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
             revert InvalidSignature();
 
@@ -166,7 +178,7 @@ contract Vault is
         address payable _to,
         bytes32 _hash,
         bytes memory _signature
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwner {
         if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
             revert InvalidSignature();
 
@@ -191,22 +203,23 @@ contract Vault is
 
     /// @notice Function to update the fee
     /// @param _newFee Updated fee
-    function adjustFee(uint256 _newFee) external onlyOwner {
-        if (_newFee <= 0 || 5000 < _newFee) revert InvalidFee(_newFee);
+    function adjustFee(uint256 _newFee) external onlyOwner isValidFee(_newFee) {
         _fee = _newFee;
     }
 
     /// @notice Function to collect native token fees
     /// @param _to Address to send fees to
-    function collectFees(address payable _to) external onlyOwner nonReentrant {
-        uint256 fee = getProratedFee(address(this).balance);
-
-        _feesByToken[address(0)] = 0;
-        _lastFeeCollection = block.timestamp;
-
+    function collectFees(address payable _to) external onlyOwner {
+        uint256 fee = getProratedFee(
+            address(0),
+            address(this).balance - _feesByToken[address(0)]
+        );
         uint256 totalFee = fee + _feesByToken[address(0)];
 
-        _to.transfer(totalFee);
+        _feesByToken[address(0)] = 0;
+        _lastFeeCollectionByToken[address(0)] = block.timestamp;
+
+        Address.sendValue(_to, totalFee);
         emit FeeCollection(block.timestamp, totalFee);
     }
 
@@ -216,19 +229,25 @@ contract Vault is
     function collectTokenFees(
         address payable _to,
         address[] memory _tokens
-    ) external onlyOwner nonReentrant {
-        for (uint256 i = 0; i < _tokens.length; ++i) {
+    ) external onlyOwner {
+        for (uint256 i = 0; i < _tokens.length; ) {
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
-            uint256 fee = getProratedFee(tokenBalance);
-
-            _feesByToken[_tokens[i]] = 0;
-            _lastFeeCollection = block.timestamp;
-
+            uint256 fee = getProratedFee(
+                _tokens[i],
+                tokenBalance - _feesByToken[_tokens[i]]
+            );
             uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
-            IERC20(_tokens[i]).transfer(_to, totalFee);
+            _feesByToken[_tokens[i]] = 0;
+            _lastFeeCollectionByToken[_tokens[i]] = block.timestamp;
+
+            SafeERC20.safeTransfer(IERC20(_tokens[i]), _to, totalFee);
             emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
+
+            unchecked {
+                i += 1;
+            }
         }
     }
 
@@ -242,13 +261,13 @@ contract Vault is
         address payable _to
     ) internal {
         // Calculate prorated fee
-        uint256 fee = getProratedFee(_amount);
+        uint256 fee = getProratedFee(address(0), _amount);
 
         // Record fee for delayed collection
         _feesByToken[address(0)] += fee;
 
         // Send token to destination
-        _to.transfer(_amount - fee);
+        Address.sendValue(_to, _amount - fee);
         emit Withdrawal(_owner, _amount);
     }
 
@@ -259,17 +278,15 @@ contract Vault is
         address payable _to
     ) internal {
         // Calculate prorated fee
-        uint256 fee = getProratedFee(_amount);
+        uint256 fee = getProratedFee(_token, _amount);
 
         // Record fee for delayed collection
         _feesByToken[_token] += fee;
 
         // Send token to destination
-        IERC20(_token).transfer(_to, _amount - fee);
+        SafeERC20.safeTransfer(IERC20(_token), _to, _amount - fee);
         emit TokenWithdrawal(_owner, _token, _amount);
     }
 
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 }

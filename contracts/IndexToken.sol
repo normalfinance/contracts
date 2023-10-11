@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 // Modules
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -9,8 +9,6 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SafeMath} from "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 //  /$$   /$$                                             /$$
 // | $$$ | $$                                            | $$
@@ -33,18 +31,14 @@ contract IndexToken is
     ERC20PermitUpgradeable,
     UUPSUpgradeable
 {
-    using SafeMath for uint256;
-
     /*///////////////////////////////////////////////////////////////
                                 State
     //////////////////////////////////////////////////////////////*/
 
     address public masterMinter;
 
-    mapping(address => bool) internal minters;
-    mapping(address => uint256) internal minterAllowed;
-
-    mapping(bytes => bool) public seenWithdrawalSignatures;
+    mapping(address => bool) internal _minters;
+    mapping(address => uint256) internal _minterAllowed;
 
     event MinterConfigured(address indexed minter, uint256 minterAllowedAmount);
     event MinterRemoved(address indexed oldMinter);
@@ -81,7 +75,7 @@ contract IndexToken is
 
     /// @notice Throws if called by any account other than a minter
     modifier onlyMinters() {
-        require(minters[msg.sender], "IndexToken: caller is not a minter");
+        require(_minters[msg.sender], "IndexToken: caller is not a minter");
         _;
     }
 
@@ -101,13 +95,13 @@ contract IndexToken is
     /// @notice Get minter allowance for an account
     /// @param _minter The address of the minter
     function minterAllowance(address _minter) external view returns (uint256) {
-        return minterAllowed[_minter];
+        return _minterAllowed[_minter];
     }
 
     /// @notice Checks if account is a minter
     /// @param _account The address to check
     function isMinter(address _account) external view returns (bool) {
-        return minters[_account];
+        return _minters[_account];
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -133,7 +127,7 @@ contract IndexToken is
         address _to,
         uint256 _amount
     ) external whenNotPaused onlyMinters returns (bool) {
-        uint256 mintingAllowedAmount = minterAllowed[msg.sender];
+        uint256 mintingAllowedAmount = _minterAllowed[msg.sender];
         require(
             _amount <= mintingAllowedAmount,
             "IndexToken: mint amount exceeds minterAllowance"
@@ -141,7 +135,9 @@ contract IndexToken is
 
         _mint(_to, _amount);
 
-        minterAllowed[msg.sender] = mintingAllowedAmount.sub(_amount);
+        unchecked {
+            _minterAllowed[msg.sender] = mintingAllowedAmount - _amount;
+        }
 
         return true;
     }
@@ -157,35 +153,29 @@ contract IndexToken is
         address, // Address of withdrawal token (address(0) for native)
         address payable, // Address of withdrawal destination,
         bytes32, // Message hash of withdrawal args with format: YYYY-MM-DD:fundId:assetSymbol:usdValue:destination (i.e. 2023-09-18:NCI:ETH:100:0x9a9C45349227f8c7Cbe52680eCa15597db135858)
-        bytes memory // Owner signature of message hash^ used to authorize Vault withdrawal
-    ) external whenNotPaused onlyMinters {
+        bytes calldata // Owner signature of message hash^ used to authorize Vault withdrawal
+    ) external whenNotPaused onlyMasterMinter {
         burn(_amount);
     }
 
     /// @notice Function to add/update a new minter
     /// @param _minter The address of the minter
     /// @param _minterAllowedAmount The minting amount allowed for the minter
-    /// @return True if the operation was successful
     function configureMinter(
         address _minter,
         uint256 _minterAllowedAmount
-    ) external whenNotPaused onlyMasterMinter returns (bool) {
-        minters[_minter] = true;
-        minterAllowed[_minter] = _minterAllowedAmount;
+    ) external whenNotPaused onlyMasterMinter {
+        _minters[_minter] = true;
+        _minterAllowed[_minter] = _minterAllowedAmount;
         emit MinterConfigured(_minter, _minterAllowedAmount);
-        return true;
     }
 
     /// @notice Function to remove a minter
     /// @param _minter The address of the minter to remove
-    /// @return True if the operation was successful
-    function removeMinter(
-        address _minter
-    ) external onlyMasterMinter returns (bool) {
-        minters[_minter] = false;
-        minterAllowed[_minter] = 0;
+    function removeMinter(address _minter) external onlyMasterMinter {
+        _minters[_minter] = false;
+        _minterAllowed[_minter] = 0;
         emit MinterRemoved(_minter);
-        return true;
     }
 
     /// @notice Function update the master minter
@@ -211,7 +201,5 @@ contract IndexToken is
         super._beforeTokenTransfer(_from, _to, _amount);
     }
 
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 }
