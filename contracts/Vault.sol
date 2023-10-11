@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // Interfaces
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -228,7 +229,7 @@ contract Vault is
 
             uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
-            IERC20(_tokens[i]).transfer(_to, totalFee);
+            SafeERC20.safeTransfer(IERC20(_tokens[i]), _to, totalFee);
             emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
 
             unchecked {
