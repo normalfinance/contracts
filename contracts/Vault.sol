@@ -261,7 +261,7 @@ contract Vault is
         _feesByToken[address(0)] += fee;
 
         // Send token to destination
-        _to.transfer(_amount - fee);
+        Address.sendValue(_to, _amount - fee);
         emit Withdrawal(_owner, _amount);
     }
 
