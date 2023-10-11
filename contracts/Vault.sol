@@ -200,11 +200,10 @@ contract Vault is
     /// @param _to Address to send fees to
     function collectFees(address payable _to) external onlyOwner {
         uint256 fee = getProratedFee(address(this).balance);
+        uint256 totalFee = fee + _feesByToken[address(0)];
 
         _feesByToken[address(0)] = 0;
         _lastFeeCollection = block.timestamp;
-
-        uint256 totalFee = fee + _feesByToken[address(0)];
 
         Address.sendValue(_to, totalFee);
         emit FeeCollection(block.timestamp, totalFee);
@@ -221,11 +220,10 @@ contract Vault is
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
             uint256 fee = getProratedFee(tokenBalance);
+            uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
             _feesByToken[_tokens[i]] = 0;
             _lastFeeCollection = block.timestamp;
-
-            uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
             SafeERC20.safeTransfer(IERC20(_tokens[i]), _to, totalFee);
             emit TokenFeeCollection(block.timestamp, _tokens[i], totalFee);
