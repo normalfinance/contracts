@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -33,8 +32,7 @@ contract Vault is
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
-    UUPSUpgradeable,
-    ReentrancyGuard
+    UUPSUpgradeable
 {
     /*///////////////////////////////////////////////////////////////
                                 State
@@ -143,7 +141,7 @@ contract Vault is
         address payable _to,
         bytes32 _hash,
         bytes calldata _signature
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwner {
         if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
             revert InvalidSignature();
 
@@ -169,7 +167,7 @@ contract Vault is
         address payable _to,
         bytes32 _hash,
         bytes memory _signature
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwner {
         if (!SignatureChecker.isValidSignatureNow(_owner, _hash, _signature))
             revert InvalidSignature();
 
@@ -218,7 +216,7 @@ contract Vault is
     function collectTokenFees(
         address payable _to,
         address[] memory _tokens
-    ) external onlyOwner nonReentrant {
+    ) external onlyOwner {
         for (uint256 i = 0; i < _tokens.length; ) {
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
