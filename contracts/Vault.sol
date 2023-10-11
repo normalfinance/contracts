@@ -210,7 +210,10 @@ contract Vault is
     /// @notice Function to collect native token fees
     /// @param _to Address to send fees to
     function collectFees(address payable _to) external onlyOwner {
-        uint256 fee = getProratedFee(address(0), address(this).balance);
+        uint256 fee = getProratedFee(
+            address(0),
+            address(this).balance - _feesByToken[address(0)]
+        );
         uint256 totalFee = fee + _feesByToken[address(0)];
 
         _feesByToken[address(0)] = 0;
@@ -230,7 +233,10 @@ contract Vault is
         for (uint256 i = 0; i < _tokens.length; ) {
             uint256 tokenBalance = IERC20(_tokens[i]).balanceOf(address(this));
 
-            uint256 fee = getProratedFee(_tokens[i], tokenBalance);
+            uint256 fee = getProratedFee(
+                _tokens[i],
+                tokenBalance - _feesByToken[_tokens[i]]
+            );
             uint256 totalFee = fee + _feesByToken[_tokens[i]];
 
             _feesByToken[_tokens[i]] = 0;
