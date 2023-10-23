@@ -54,7 +54,7 @@ contract Vault is
     mapping(bytes => bool) private _seenWithdrawalSignatures;
 
     /// @notice The maximum the fee can be set
-    uint256 private immutable FEE_LIMIT = 5_000;
+    uint256 private constant FEE_LIMIT = 5_000;
 
     event Withdrawal(address indexed owner, uint256 amount);
     event TokenWithdrawal(address indexed owner, address token, uint256 amount);
